@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "model-price-admin",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "assets": {
+    "directory": "apps/admin/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "model-price-db", "database_id": "REPLACE_WITH_D1_DATABASE_ID", "migrations_dir": "worker/migrations" }
+  ],
+  "r2_buckets": [
+    { "binding": "PDF_BUCKET", "bucket_name": "model-price-pdfs" }
+  ],
+  "env": {
+    "staging": {
+      "name": "model-price-admin-staging",
+      "vars": { "ENVIRONMENT": "staging" },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "model-price-db-staging", "database_id": "REPLACE_WITH_STAGING_D1_DATABASE_ID", "migrations_dir": "worker/migrations" }
+      ],
+      "r2_buckets": [
+        { "binding": "PDF_BUCKET", "bucket_name": "model-price-pdfs-staging" }
+      ]
+    },
+    "production": {
+      "name": "model-price-admin",
+      "vars": { "ENVIRONMENT": "production" },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "model-price-db-production", "database_id": "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID", "migrations_dir": "worker/migrations" }
+      ],
+      "r2_buckets": [
+        { "binding": "PDF_BUCKET", "bucket_name": "model-price-pdfs-production" }
+      ]
+    }
+  }
+}

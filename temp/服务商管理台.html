@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>服务商管理台 · 报价搜索/比价/报价单</title>
+<style>
+  :root {
+    --bg: #F1EFE8; --card: #FFFFFF; --border: rgba(0,0,0,0.09); --border-2: rgba(0,0,0,0.16);
+    --ink: #2C2C2A; --muted: #5F5E5A; --hint: #888780;
+    --blue: #185FA5; --blue-50: #E6F1FB; --blue-100: #B5D4F4;
+    --teal: #0F6E56; --teal-50: #E1F5EE;
+    --amber: #854F0B; --amber-50: #FAEEDA;
+    --purple: #534AB7; --purple-50: #EEEDFE;
+    --coral: #993C1D; --coral-50: #FAECE7;
+    --radius: 12px; --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; font-size: 13px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+
+  .app { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  .app-header { text-align: center; margin-bottom: 18px; }
+  .app-header h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.2px; }
+  .app-header p { font-size: 12px; color: var(--muted); margin: 0; }
+
+  .nav-tabs { display: flex; gap: 2px; margin-bottom: 16px; }
+  .nav-tab { padding: 8px 18px; border: 0.5px solid var(--border-2); border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: var(--bg); font-size: 13px; color: var(--muted); cursor: pointer; font-family: inherit; }
+  .nav-tab.active { background: var(--card); color: var(--ink); font-weight: 500; position: relative; }
+  .nav-tab.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 1px; background: var(--card); }
+  .nav-bar { border-bottom: 0.5px solid var(--border-2); margin-bottom: 16px; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .card { background: var(--card); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+  .card h3 { font-size: 14px; font-weight: 500; margin: 0 0 12px; }
+
+  input[type="text"], input[type="number"], input[type="date"], select, textarea { padding: 7px 10px; border: 0.5px solid var(--border-2); border-radius: var(--radius-sm); font-size: 13px; font-family: inherit; background: var(--card); color: var(--ink); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
+  .btn { padding: 7px 14px; border: 0.5px solid var(--border-2); border-radius: var(--radius-sm); background: var(--card); font-size: 13px; cursor: pointer; font-family: inherit; color: var(--ink); }
+  .btn:hover { background: var(--bg); }
+  .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  .search-bar { display: flex; gap: 8px; margin-bottom: 10px; }
+  .search-bar input { flex: 1; }
+  .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-row select { flex: 1; min-width: 110px; }
+  .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .fchip { font-size: 11px; padding: 3px 9px; border-radius: 99px; background: #ECEAE3; color: var(--muted); cursor: pointer; border: 0.5px solid transparent; }
+  .fchip.active { background: var(--ink); color: #fff; }
+
+  .tbl-wrap { background: var(--card); border: 0.5px solid var(--border); border-radius: var(--radius); overflow: hidden; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; }
+  thead th { background: var(--blue-50); color: var(--blue); font-weight: 500; border-bottom: 0.5px solid var(--border); white-space: nowrap; }
+  tbody tr { border-bottom: 0.5px solid var(--border); }
+  tbody tr:last-child { border-bottom: 0; }
+  tbody tr:nth-child(even) { background: #FBFAF7; }
+  td.muted { color: var(--muted); }
+
+  .price { font-weight: 500; color: var(--blue); white-space: nowrap; }
+  .price.lo { color: var(--coral); }
+  .price.hi { color: var(--teal); }
+  .price.best { background: var(--teal-50); padding: 2px 6px; border-radius: 4px; color: var(--teal); font-weight: 600; }
+
+  .badge { font-size: 10px; padding: 2px 7px; border-radius: 99px; font-weight: 500; white-space: nowrap; }
+  .badge.teal { background: var(--teal-50); color: var(--teal); }
+  .badge.blue { background: var(--blue-50); color: var(--blue); }
+  .badge.purple { background: var(--purple-50); color: var(--purple); }
+  .badge.coral { background: var(--coral-50); color: var(--coral); }
+  .badge.gray { background: #ECEAE3; color: var(--muted); }
+
+  .empty { text-align: center; padding: 32px; color: var(--hint); font-size: 13px; }
+
+  /* Compare */
+  .compare-group { margin-bottom: 16px; }
+  .compare-group h4 { font-size: 13px; font-weight: 500; margin: 0 0 8px; padding: 6px 10px; background: var(--bg); border-radius: var(--radius-sm); }
+
+  /* Quote */
+  .step-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 12px; font-weight: 500; margin-right: 6px; }
+  .quote-filters { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .quote-filters select { flex: 1; min-width: 100px; }
+  .quote-filters input { flex: 1; min-width: 120px; }
+  .product-list { max-height: 380px; overflow-y: auto; border: 0.5px solid var(--border); border-radius: var(--radius-sm); }
+  .product-list table tbody tr { cursor: pointer; }
+  .product-list table tbody tr:hover { background: var(--blue-50); }
+  .product-list table tbody tr.selected { background: var(--teal-50); }
+  .product-list input[type="checkbox"] { margin: 0; }
+
+  .markup-row { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .markup-group { display: flex; align-items: center; gap: 6px; }
+  .markup-group label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .markup-group input { width: 70px; }
+
+  .selected-table input[type="number"], .selected-table input[type="text"] { width: 80px; padding: 4px 6px; font-size: 12px; }
+  .selected-table .margin { font-size: 11px; color: var(--teal); font-weight: 500; }
+
+  .customer-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .customer-form .full { grid-column: 1 / -1; }
+  .form-group label { display: block; font-size: 11px; color: var(--hint); margin-bottom: 3px; }
+  .form-group input, .form-group textarea, .form-group select { width: 100%; }
+
+  .quote-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+  /* Modal */
+  .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1000; overflow-y: auto; }
+  .modal.open { display: block; }
+  .modal-content { background: #fff; max-width: 820px; margin: 20px auto; border-radius: var(--radius); overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 0.5px solid var(--border); background: var(--bg); position: sticky; top: 0; z-index: 10; }
+  .modal-header .actions { display: flex; gap: 6px; }
+  .modal-body { padding: 0; max-height: calc(100vh - 80px); overflow-y: auto; }
+
+  /* Quote document */
+  .quote-doc { padding: 40px; font-size: 13px; line-height: 1.8; color: var(--ink); }
+  .quote-doc h2 { font-size: 22px; text-align: center; margin: 0 0 4px; font-weight: 600; letter-spacing: 2px; }
+  .quote-doc .quote-sub { text-align: center; color: var(--muted); font-size: 12px; margin-bottom: 24px; letter-spacing: 1px; }
+  .quote-doc .quote-meta-row { display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 12px; color: var(--muted); }
+  .quote-doc .quote-parties { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 20px; }
+  .quote-doc .quote-party { flex: 1; font-size: 12px; line-height: 1.8; }
+  .quote-doc .quote-party .plabel { color: var(--hint); font-size: 11px; }
+  .quote-doc .quote-party .pname { font-size: 14px; font-weight: 500; color: var(--ink); margin: 2px 0 4px; }
+  .quote-doc table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
+  .quote-doc table th { background: #F5F4EF; padding: 8px 10px; border: 0.5px solid var(--border); font-weight: 500; text-align: left; }
+  .quote-doc table td { padding: 8px 10px; border: 0.5px solid var(--border); }
+  .quote-doc table tbody tr:nth-child(even) { background: #FBFAF7; }
+  .quote-doc .quote-terms { font-size: 11px; color: var(--muted); line-height: 1.8; margin-top: 16px; }
+  .quote-doc .quote-terms h4 { font-size: 12px; color: var(--ink); margin: 0 0 4px; }
+  .quote-doc .sign-row { display: flex; justify-content: space-between; margin-top: 32px; }
+  .quote-doc .sign-box { font-size: 12px; color: var(--muted); }
+  .quote-doc .sign-box .sign-line { border-bottom: 0.5px solid var(--border-2); width: 180px; height: 28px; margin-top: 4px; }
+
+  @media print {
+    body * { visibility: hidden; }
+    .modal, .modal-content, .modal-body, .quote-doc, .quote-doc * { visibility: visible; }
+    .modal { position: static; overflow: visible; background: none; }
+    .modal-content { box-shadow: none; max-width: 100%; margin: 0; border-radius: 0; }
+    .modal-header { display: none; }
+    .modal-body { max-height: none; overflow: visible; }
+    .quote-doc { padding: 20px; }
+  }
+  @media (max-width: 640px) {
+    .customer-form { grid-template-columns: 1fr; }
+    .filter-row { flex-direction: column; }
+    .quote-doc .quote-parties { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="app-header">
+    <h1>服务商管理台</h1>
+    <p>大模型 API 报价搜索 · 跨服务商比价 · 客户报价单生成</p>
+  </div>
+
+  <div class="nav-bar">
+    <div class="nav-tabs">
+      <button class="nav-tab active" data-view="search" onclick="App.switchView('search')">搜索报价</button>
+      <button class="nav-tab" data-view="compare" onclick="App.switchView('compare')">跨商比价</button>
+      <button class="nav-tab" data-view="quote" onclick="App.switchView('quote')">生成报价单</button>
+    </div>
+  </div>
+
+  <!-- ========== SEARCH ========== -->
+  <div class="view active" id="view-search">
+    <div class="card">
+      <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="输入模型名 / 资源类型 / 关键词，如 Claude、ccmax、折扣..." oninput="Search.run()">
+        <button class="btn" onclick="Search.run()">搜索</button>
+      </div>
+      <div class="filter-row">
+        <select id="f-provider" onchange="Search.run()"></select>
+        <select id="f-line" onchange="Search.run()"></select>
+        <select id="f-origin" onchange="Search.run()"></select>
+        <select id="f-brand" onchange="Search.run()"></select>
+      </div>
+    </div>
+    <div id="searchResults"></div>
+  </div>
+
+  <!-- ========== COMPARE ========== -->
+  <div class="view" id="view-compare">
+    <div class="card">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:12px;color:var(--muted)">选择模型：</label>
+        <select id="compareModel" onchange="Compare.run()" style="min-width:180px"></select>
+        <label style="font-size:12px;color:var(--muted);margin-left:12px">产品线：</label>
+        <select id="compareLine" onchange="Compare.run()" style="min-width:120px"></select>
+        <label style="font-size:12px;color:var(--muted);margin-left:12px">排序：</label>
+        <select id="compareSort" onchange="Compare.run()">
+          <option value="asc">价格低→高</option>
+          <option value="desc">价格高→低</option>
+        </select>
+      </div>
+    </div>
+    <div id="compareResults"></div>
+  </div>
+
+  <!-- ========== QUOTE ========== -->
+  <div class="view" id="view-quote">
+    <div class="card">
+      <h3><span class="step-num">1</span>选择服务商与产品</h3>
+      <div class="quote-filters">
+        <select id="quoteProvider" onchange="Quote.onProviderChange()"></select>
+        <select id="quoteFilterLine" onchange="Quote.renderProducts()"></select>
+        <select id="quoteFilterModel" onchange="Quote.renderProducts()"></select>
+        <input type="text" id="quoteSearch" placeholder="筛选产品..." oninput="Quote.renderProducts()">
+      </div>
+      <div class="product-list" id="quoteProductList"></div>
+    </div>
+
+    <div class="card" id="quoteConfigCard" style="display:none">
+      <h3><span class="step-num">2</span>定价与客户信息</h3>
+      <div class="markup-row">
+        <div class="markup-group">
+          <label>折扣率加价（+）：</label>
+          <input type="number" id="markupRate" value="0.1" step="0.01" min="0" onchange="Quote.updateSellPrices()">
+          <span style="font-size:11px;color:var(--hint)">成本折扣率 + 此值 = 客户折扣率</span>
+        </div>
+        <div class="markup-group">
+          <label>USD 加价(%)：</label>
+          <input type="number" id="markupUsd" value="10" step="1" min="0" onchange="Quote.updateSellPrices()">
+          <span style="font-size:11px;color:var(--hint)">成本 × (1+此%) = 客户单价</span>
+        </div>
+        <button class="btn btn-sm" onclick="Quote.resetSell()">重置为成本价</button>
+      </div>
+      <div id="quoteSelectedTable"></div>
+      <div class="customer-form">
+        <div class="form-group"><label>供方名称（你的公司）</label><input type="text" id="qSellerName" value="" placeholder="如：XX科技"></div>
+        <div class="form-group"><label>供方联系人</label><input type="text" id="qSellerContact" value="" placeholder="姓名"></div>
+        <div class="form-group"><label>需方名称（客户）</label><input type="text" id="qBuyerName" placeholder="客户公司"></div>
+        <div class="form-group"><label>需方联系人</label><input type="text" id="qBuyerContact" placeholder="客户姓名"></div>
+        <div class="form-group"><label>报价日期</label><input type="date" id="qDate"></div>
+        <div class="form-group"><label>有效期（天）</label><input type="number" id="qValidity" value="30"></div>
+        <div class="form-group full"><label>备注说明</label><textarea id="qNotes" rows="2" placeholder="如：含税1点；6点专票另加；接入文档另行提供..."></textarea></div>
+      </div>
+      <div class="quote-actions">
+        <button class="btn-primary" onclick="Quote.generate()">生成报价单</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quote Output Modal -->
+<div class="modal" id="quoteModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <strong>报价单预览</strong>
+      <div class="actions">
+        <button class="btn btn-sm" onclick="Quote.download()">下载 HTML</button>
+        <button class="btn btn-sm" onclick="window.print()">打印 / PDF</button>
+        <button class="btn btn-sm" onclick="Quote.closeModal()">关闭</button>
+      </div>
+    </div>
+    <div class="modal-body" id="quoteOutput"></div>
+  </div>
+</div>
+
+<script>
+/* ==================== DATA LAYER ==================== */
+const DB = {
+  providers: {
+    dataeyes: { name: "DataEyesAI", alias: "数眼", category: "大模型API中转", status: "接触中", updated: "2026-06-13", tax: "含税1点，6点专票另加" }
+  },
+  products: [
+    // ===== 直客报价 =====
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"直客",resource:"正价官方代理of",tier:"vip",price:0.8,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"直客",resource:"正价官方代理of",tier:"svip",price:0.72,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"直客",resource:"特价多号sp",tier:"vip",price:0.4,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"直客",resource:"特价多号sp",tier:"svip",price:0.33,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Banana生图",brand:"Google",origin:"海外",line:"直客",resource:"正价of",tier:"vip",price:0.8,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Banana生图",brand:"Google",origin:"海外",line:"直客",resource:"正价of",tier:"svip",price:0.72,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Veo视频",brand:"Google",origin:"海外",line:"直客",resource:"官方代理",tier:"vip",price:0.75,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Veo视频",brand:"Google",origin:"海外",line:"直客",resource:"官方代理",tier:"svip",price:0.7,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"直客",resource:"aws正价of",tier:"vip",price:0.85,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"直客",resource:"aws正价of",tier:"svip",price:0.8,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"直客",resource:"Anthropic保稳",tier:"vip",price:0.8,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"直客",resource:"Anthropic保稳",tier:"svip",price:0.75,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"直客",resource:"ccmax(禁止蒸)",tier:"vip",price:0.25,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"直客",resource:"ccmax(禁止蒸)",tier:"svip",price:0.2,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"直客",resource:"官方代理of",tier:"vip",price:0.75,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"直客",resource:"官方代理of",tier:"svip",price:0.65,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"直客",resource:"混合多号sp",tier:"vip",price:0.09,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"直客",resource:"混合多号sp",tier:"svip",price:0.07,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"直客",resource:"image-2",tier:"vip",price:0.11,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"直客",resource:"image-2",tier:"svip",price:0.11,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"Qwen",brand:"阿里",origin:"国产",line:"直客",resource:"官方代理",tier:"vip",price:0.75,unit:"折扣率",currency:"RMB",tpm:2000},
+    {pid:"dataeyes",model:"Qwen",brand:"阿里",origin:"国产",line:"直客",resource:"官方代理",tier:"svip",price:0.7,unit:"折扣率",currency:"RMB",tpm:2000},
+    {pid:"dataeyes",model:"Qwen",brand:"阿里",origin:"国产",line:"直客",resource:"特价官key",tier:"vip",price:0.6,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"Qwen",brand:"阿里",origin:"国产",line:"直客",resource:"特价官key",tier:"svip",price:0.55,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"豆包",brand:"火山",origin:"国产",line:"直客",resource:"官方代理",tier:"vip",price:0.8,unit:"折扣率",currency:"RMB",tpm:2000},
+    {pid:"dataeyes",model:"豆包",brand:"火山",origin:"国产",line:"直客",resource:"官方代理",tier:"svip",price:0.75,unit:"折扣率",currency:"RMB",tpm:2000},
+    {pid:"dataeyes",model:"DeepSeek",brand:"DeepSeek",origin:"国产",line:"直客",resource:"阿里特价",tier:"vip",price:0.6,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"DeepSeek",brand:"DeepSeek",origin:"国产",line:"直客",resource:"阿里特价",tier:"svip",price:0.6,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"DeepSeek",brand:"DeepSeek",origin:"国产",line:"直客",resource:"阿里保稳",tier:"vip",price:0.75,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"DeepSeek",brand:"DeepSeek",origin:"国产",line:"直客",resource:"阿里保稳",tier:"svip",price:0.7,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Kimi",brand:"月之暗面",origin:"国产",line:"直客",resource:"原厂",tier:"vip",price:0.65,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"Kimi",brand:"月之暗面",origin:"国产",line:"直客",resource:"原厂",tier:"svip",price:0.6,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"Minimax",brand:"Minimax",origin:"国产",line:"直客",resource:"原厂",tier:"vip",price:0.55,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Minimax",brand:"Minimax",origin:"国产",line:"直客",resource:"原厂",tier:"svip",price:0.47,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"GLM",brand:"智谱",origin:"国产",line:"直客",resource:"智谱官方",tier:"vip",price:0.8,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"GLM",brand:"智谱",origin:"国产",line:"直客",resource:"智谱官方",tier:"svip",price:0.7,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"GLM",brand:"智谱",origin:"国产",line:"直客",resource:"自部署S类",tier:"vip",price:0.6,unit:"折扣率",currency:"RMB",tpm:8000},
+    {pid:"dataeyes",model:"GLM",brand:"智谱",origin:"国产",line:"直客",resource:"自部署S类",tier:"svip",price:0.55,unit:"折扣率",currency:"RMB",tpm:8000},
+    {pid:"dataeyes",model:"混元",brand:"腾讯",origin:"国产",line:"直客",resource:"腾讯云",tier:"vip",price:0.7,unit:"折扣率",currency:"RMB",tpm:500},
+    {pid:"dataeyes",model:"混元",brand:"腾讯",origin:"国产",line:"直客",resource:"腾讯云",tier:"svip",price:0.6,unit:"折扣率",currency:"RMB",tpm:500},
+    {pid:"dataeyes",model:"Grok",brand:"xAI",origin:"海外",line:"直客",resource:"原厂",tier:"vip",price:0.6,unit:"折扣率",currency:"RMB",tpm:500},
+    {pid:"dataeyes",model:"Grok",brand:"xAI",origin:"海外",line:"直客",resource:"原厂",tier:"svip",price:0.5,unit:"折扣率",currency:"RMB",tpm:500},
+    {pid:"dataeyes",model:"可灵",brand:"快手",origin:"国产",line:"直客",resource:"原厂",tier:"vip",price:0.7,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"可灵",brand:"快手",origin:"国产",line:"直客",resource:"原厂",tier:"svip",price:0.7,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"海螺",brand:"Minimax",origin:"国产",line:"直客",resource:"原厂",tier:"vip",price:0.55,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"海螺",brand:"Minimax",origin:"国产",line:"直客",resource:"原厂",tier:"svip",price:0.47,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"联网搜索",brand:"dataeyes",origin:"自研",line:"直客",resource:"dataeyes原厂",tier:"vip",price:0.8,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"联网搜索",brand:"dataeyes",origin:"自研",line:"直客",resource:"dataeyes原厂",tier:"svip",price:0.6,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"文件/网页解析",brand:"dataeyes",origin:"自研",line:"直客",resource:"dataeyes原厂",tier:"vip",price:0.8,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"文件/网页解析",brand:"dataeyes",origin:"自研",line:"直客",resource:"dataeyes原厂",tier:"svip",price:0.6,unit:"折扣率",currency:"RMB"},
+
+    // ===== 中转同行报价 =====
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"中转",resource:"特价多号sp",tier:"pro",price:0.26,unit:"折扣率",currency:"RMB",tpm:10000},
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"中转",resource:"逆向",tier:"pro",price:0.07,unit:"折扣率",currency:"RMB"},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"中转",resource:"ccmax(可蒸)",tier:"pro",price:0.31,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"中转",resource:"ccmax(禁止蒸)",tier:"pro",price:0.17,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"中转",resource:"aws特价多号",tier:"pro",price:0.42,unit:"折扣率",currency:"RMB",tpm:5000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"中转",resource:"AZ多号",tier:"pro",price:0.28,unit:"折扣率",currency:"RMB",tpm:2000},
+    {pid:"dataeyes",model:"Qwen",brand:"阿里",origin:"国产",line:"中转",resource:"特价",tier:"pro",price:0.5,unit:"折扣率",currency:"RMB",tpm:1000},
+    {pid:"dataeyes",model:"自部署A类",brand:"dataeyes",origin:"自研",line:"中转",resource:"de-vip通用",tier:"pro",price:0.35,unit:"折扣率",currency:"RMB",tpm:2000},
+
+    // ===== 蒸馏报价 =====
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"蒸馏",resource:"纯vertex",tier:"-",price:0.48,unit:"折扣率",currency:"RMB",service:"中转",tpm:10000},
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"蒸馏",resource:"aistudio+vertex混合",tier:"-",price:0.42,unit:"折扣率",currency:"RMB",service:"中转",tpm:10000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"蒸馏",resource:"Anthropic官key",tier:"-",price:0.8,unit:"折扣率",currency:"RMB",service:"提供key",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"蒸馏",resource:"Aws bedrock官key",tier:"-",price:0.65,unit:"折扣率",currency:"RMB",service:"提供key",tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"蒸馏",resource:"ccmax资源",tier:"-",price:0.36,unit:"折扣率",currency:"RMB",service:"单独池子托管",tpm:5000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"蒸馏",resource:"openai直连T4",tier:"-",price:0.75,unit:"折扣率",currency:"RMB",service:"提供key",tpm:10000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"蒸馏",resource:"微软云T4-T5",tier:"-",price:0.65,unit:"折扣率",currency:"RMB",service:"中转",tpm:10000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"蒸馏",resource:"gpt资源(订阅号)",tier:"-",price:0.18,unit:"折扣率",currency:"RMB",service:"单独池子托管",tpm:5000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"蒸馏",resource:"gpt-cyber(实名正宗)",tier:"-",price:0.36,unit:"折扣率",currency:"RMB",service:"单独池子托管",tpm:5000},
+
+    // ===== 卖key价格 =====
+    {pid:"dataeyes",model:"Gemini",brand:"Google",origin:"海外",line:"卖key",resource:"gcp长期号",tier:"-",price:0.7,unit:"USD售价",currency:"USD",warranty:"永久",cost:0.65,tpm:10000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"卖key",resource:"Aws bedrock长期号",tier:"-",price:0.85,unit:"USD售价",currency:"USD",warranty:"永久",cost:0.85,tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"卖key",resource:"Anthropic速刷key",tier:"-",price:"0.75-0.8",unit:"USD售价",currency:"USD",warranty:"12h",cost:0.7,tpm:5000},
+    {pid:"dataeyes",model:"Claude",brand:"Anthropic",origin:"海外",line:"卖key",resource:"Aws bedrock速刷key",tier:"-",price:0.55,unit:"USD售价",currency:"USD",warranty:"2.5h",cost:0.45,tpm:5000},
+    {pid:"dataeyes",model:"GPT",brand:"OpenAI",origin:"海外",line:"卖key",resource:"openai速刷key",tier:"-",price:"0.65-0.75",unit:"USD售价",currency:"USD",warranty:"12h",cost:0.6,tpm:10000},
+    {pid:"dataeyes",model:"Grok",brand:"xAI",origin:"海外",line:"卖key",resource:"速刷key",tier:"-",price:0.45,unit:"USD售价",currency:"USD",warranty:"12h",cost:0.3,tpm:500},
+  ]
+};
+
+/* ==================== UTILS ==================== */
+function $(id) { return document.getElementById(id); }
+function el(html) { const d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; }
+function fmtPrice(p) { return typeof p === 'number' ? p.toString() : p; }
+function priceNum(p) { return typeof p === 'number' ? p : parseFloat(String(p).split('-')[0]); }
+function priceClass(p) { const n = priceNum(p); if (n < 0.3) return 'lo'; if (n >= 0.7) return 'hi'; return ''; }
+function originBadge(o) { const m = {'海外':'blue','国产':'teal','自研':'purple'}; return '<span class="badge '+(m[o]||'gray')+'">'+o+'</span>'; }
+function lineBadge(l) { const m={'直客':'blue','中转':'teal','蒸馏':'purple','卖key':'coral'}; return '<span class="badge '+(m[l]||'gray')+'">'+l+'</span>'; }
+function uniq(arr) { return [...new Set(arr)]; }
+
+/* ==================== APP ==================== */
+const App = {
+  switchView(name) {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.view === name));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+  }
+};
+
+/* ==================== SEARCH ==================== */
+const Search = {
+  init() {
+    // populate filters
+    const providers = Object.entries(DB.providers);
+    const lines = uniq(DB.products.map(p => p.line));
+    const origins = uniq(DB.products.map(p => p.origin));
+    const brands = uniq(DB.products.map(p => p.brand));
+
+    $('f-provider').innerHTML = '<option value="">全部服务商</option>' + providers.map(([k,v]) => `<option value="${k}">${v.name}</option>`).join('');
+    $('f-line').innerHTML = '<option value="">全部产品线</option>' + lines.map(l => `<option value="${l}">${l}</option>`).join('');
+    $('f-origin').innerHTML = '<option value="">全部来源</option>' + origins.map(o => `<option value="${o}">${o}</option>`).join('');
+    $('f-brand').innerHTML = '<option value="">全部品牌</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join('');
+    this.run();
+  },
+
+  run() {
+    const kw = ($('searchInput').value || '').trim().toLowerCase();
+    const fp = $('f-provider').value;
+    const fl = $('f-line').value;
+    const fo = $('f-origin').value;
+    const fb = $('f-brand').value;
+
+    let results = DB.products.filter(p => {
+      if (fp && p.pid !== fp) return false;
+      if (fl && p.line !== fl) return false;
+      if (fo && p.origin !== fo) return false;
+      if (fb && p.brand !== fb) return false;
+      if (kw) {
+        const hay = (p.model + ' ' + p.resource + ' ' + p.line + ' ' + p.brand + ' ' + p.tier + ' ' + (p.service||'') + ' ' + (p.warranty||'') + ' ' + (p.tpm||'')).toLowerCase();
+        if (!hay.includes(kw)) return false;
+      }
+      return true;
+    });
+
+    this.render(results);
+  },
+
+  render(results) {
+    const c = $('searchResults');
+    if (!results.length) { c.innerHTML = '<div class="empty">没有匹配的报价记录</div>'; return; }
+
+    let html = `<div class="tbl-wrap"><table><thead><tr>
+      <th style="width:11%">服务商</th><th style="width:10%">模型</th><th>资源类型</th>
+      <th style="width:8%">产品线</th><th style="width:7%">来源</th><th style="width:7%">等级</th>
+      <th style="width:10%">价格</th><th style="width:10%">单位</th><th style="width:9%">参考TPM</th>
+      <th style="width:8%">质保/服务</th>
+    </tr></thead><tbody>`;
+
+    results.forEach(p => {
+      const pv = DB.providers[p.pid];
+      const extra = p.warranty ? p.warranty : (p.service || '');
+      html += `<tr>
+        <td>${pv.name}</td>
+        <td><b>${p.model}</b></td>
+        <td class="muted">${p.resource}</td>
+        <td>${lineBadge(p.line)}</td>
+        <td>${originBadge(p.origin)}</td>
+        <td class="muted">${p.tier}</td>
+        <td><span class="price ${priceClass(p.price)}">${fmtPrice(p.price)}</span></td>
+        <td class="muted">${p.unit}</td>
+        <td class="muted">${p.tpm ? p.tpm.toLocaleString() + ' 万/分' : '-'}</td>
+        <td class="muted">${extra}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>
+      <div style="font-size:11px;color:var(--hint);margin-top:6px;text-align:right">共 ${results.length} 条 · 折扣率 = 相对官方原价比例 · <span class="price lo">红色</span>≤0.3 · <span class="price">蓝色</span>0.3-0.7 · <span class="price hi">绿色</span>≥0.7</div>`;
+
+    c.innerHTML = html;
+  }
+};
+
+/* ==================== COMPARE ==================== */
+const Compare = {
+  init() {
+    const models = uniq(DB.products.map(p => p.model)).sort();
+    const lines = uniq(DB.products.map(p => p.line));
+    $('compareModel').innerHTML = '<option value="">选择模型...</option>' + models.map(m => `<option value="${m}">${m}</option>`).join('');
+    $('compareLine').innerHTML = '<option value="">全部产品线</option>' + lines.map(l => `<option value="${l}">${l}</option>`).join('');
+  },
+
+  run() {
+    const model = $('compareModel').value;
+    const line = $('compareLine').value;
+    const sort = $('compareSort').value;
+
+    if (!model) { $('compareResults').innerHTML = '<div class="empty">请选择一个模型进行比价</div>'; return; }
+
+    let items = DB.products.filter(p => p.model === model && (!line || p.line === line));
+    items.sort((a, b) => {
+      const pa = priceNum(a.price), pb = priceNum(b.price);
+      return sort === 'asc' ? pa - pb : pb - pa;
+    });
+
+    // group by provider
+    const byProvider = {};
+    items.forEach(p => { (byProvider[p.pid] = byProvider[p.pid] || []).push(p); });
+
+    // find best price per unit type
+    const bestByUnit = {};
+    items.forEach(p => {
+      const key = p.unit;
+      const n = priceNum(p.price);
+      if (!bestByUnit[key] || n < priceNum(bestByUnit[key].price)) bestByUnit[key] = p;
+    });
+
+    let html = '';
+    Object.entries(byProvider).forEach(([pid, prods]) => {
+      const pv = DB.providers[pid];
+      html += `<div class="compare-group"><h4>${pv.name}（${pv.alias}）· ${prods.length} 条报价</h4>`;
+      html += `<div class="tbl-wrap"><table><thead><tr>
+        <th style="width:10%">模型</th><th>资源类型</th><th style="width:8%">产品线</th>
+        <th style="width:7%">等级</th><th style="width:10%">价格</th><th style="width:10%">单位</th>
+        <th style="width:10%">参考TPM</th><th style="width:10%">质保/服务</th><th style="width:8%">最优</th>
+      </tr></thead><tbody>`;
+      prods.forEach(p => {
+        const isBest = bestByUnit[p.unit] === p;
+        const extra = p.warranty ? p.warranty : (p.service || '');
+        html += `<tr>
+          <td><b>${p.model}</b></td>
+          <td class="muted">${p.resource}</td>
+          <td>${lineBadge(p.line)}</td>
+          <td class="muted">${p.tier}</td>
+          <td><span class="price ${isBest ? 'best' : priceClass(p.price)}">${fmtPrice(p.price)}</span></td>
+          <td class="muted">${p.unit}</td>
+          <td class="muted">${p.tpm ? p.tpm.toLocaleString() + ' 万/分' : '-'}</td>
+          <td class="muted">${extra}</td>
+          <td>${isBest ? '<span class="badge teal">最低</span>' : ''}</td>
+        </tr>`;
+      });
+      html += '</tbody></table></div></div>';
+    });
+
+    if (!items.length) html = '<div class="empty">该模型没有匹配的报价记录</div>';
+
+    $('compareResults').innerHTML = html;
+  }
+};
+
+/* ==================== QUOTE ==================== */
+const Quote = {
+  selected: [],  // array of {idx, sellPrice, sellText}
+
+  init() {
+    const providers = Object.entries(DB.providers);
+    $('quoteProvider').innerHTML = '<option value="">选择服务商...</option>' + providers.map(([k,v]) => `<option value="${k}">${v.name}（${v.alias}）</option>`).join('');
+    $('qDate').value = new Date().toISOString().slice(0, 10);
+    this.onProviderChange();
+  },
+
+  onProviderChange() {
+    const pid = $('quoteProvider').value;
+    if (!pid) { $('quoteProductList').innerHTML = '<div class="empty">请先选择服务商</div>'; $('quoteConfigCard').style.display = 'none'; return; }
+
+    const products = DB.products.filter(p => p.pid === pid);
+    const lines = uniq(products.map(p => p.line));
+    const models = uniq(products.map(p => p.model));
+    $('quoteFilterLine').innerHTML = '<option value="">全部产品线</option>' + lines.map(l => `<option>${l}</option>`).join('');
+    $('quoteFilterModel').innerHTML = '<option value="">全部模型</option>' + models.map(m => `<option>${m}</option>`).join('');
+    this.selected = [];
+    this.renderProducts();
+    $('quoteConfigCard').style.display = 'none';
+  },
+
+  renderProducts() {
+    const pid = $('quoteProvider').value;
+    if (!pid) return;
+    const fl = $('quoteFilterLine').value;
+    const fm = $('quoteFilterModel').value;
+    const kw = ($('quoteSearch').value || '').trim().toLowerCase();
+
+    let products = DB.products.filter((p, i) => {
+      if (p.pid !== pid) return false;
+      if (fl && p.line !== fl) return false;
+      if (fm && p.model !== fm) return false;
+      if (kw && !(p.model + ' ' + p.resource + ' ' + p.line + ' ' + (p.tpm||'')).toLowerCase().includes(kw)) return false;
+      return true;
+    });
+
+    const pv = DB.providers[pid];
+    let html = `<table><thead><tr>
+      <th style="width:5%"></th><th style="width:10%">模型</th><th>资源类型</th>
+      <th style="width:8%">产品线</th><th style="width:7%">等级</th>
+      <th style="width:10%">成本价</th><th style="width:10%">单位</th><th style="width:10%">参考TPM</th>
+      <th style="width:10%">质保/服务</th>
+    </tr></thead><tbody>`;
+
+    products.forEach(p => {
+      const realIdx = DB.products.indexOf(p);
+      const isSel = this.selected.some(s => s.idx === realIdx);
+      const extra = p.warranty ? p.warranty : (p.service || '');
+      html += `<tr class="${isSel ? 'selected' : ''}" onclick="Quote.toggle(${realIdx})">
+        <td><input type="checkbox" ${isSel ? 'checked' : ''} onclick="event.stopPropagation(); Quote.toggle(${realIdx})"></td>
+        <td><b>${p.model}</b></td>
+        <td class="muted">${p.resource}</td>
+        <td>${lineBadge(p.line)}</td>
+        <td class="muted">${p.tier}</td>
+        <td><span class="price ${priceClass(p.price)}">${fmtPrice(p.price)}</span></td>
+        <td class="muted">${p.unit}</td>
+        <td class="muted">${p.tpm ? p.tpm.toLocaleString() + ' 万/分' : '-'}</td>
+        <td class="muted">${extra}</td>
+      </tr>`;
+    });
+
+    html += '</tbody></table>';
+    $('quoteProductList').innerHTML = html;
+  },
+
+  toggle(idx) {
+    const i = this.selected.findIndex(s => s.idx === idx);
+    if (i >= 0) { this.selected.splice(i, 1); }
+    else {
+      const p = DB.products[idx];
+      this.selected.push({ idx, sellPrice: this.calcSell(p) });
+    }
+    this.renderProducts();
+    this.renderSelected();
+  },
+
+  calcSell(p) {
+    if (p.unit === '折扣率') {
+      const markup = parseFloat($('markupRate').value) || 0;
+      return priceNum(p.price) + markup;
+    } else {
+      const markup = (parseFloat($('markupUsd').value) || 0) / 100;
+      return +(priceNum(p.price) * (1 + markup)).toFixed(2);
+    }
+  },
+
+  updateSellPrices() {
+    this.selected.forEach(s => { s.sellPrice = this.calcSell(DB.products[s.idx]); });
+    this.renderSelected();
+  },
+
+  resetSell() {
+    this.selected.forEach(s => { s.sellPrice = priceNum(DB.products[s.idx].price); });
+    this.renderSelected();
+  },
+
+  renderSelected() {
+    if (!this.selected.length) {
+      $('quoteSelectedTable').innerHTML = '';
+      $('quoteConfigCard').style.display = 'none';
+      return;
+    }
+    $('quoteConfigCard').style.display = 'block';
+
+    let html = `<div class="tbl-wrap" style="margin-bottom:12px"><table class="selected-table"><thead><tr>
+      <th style="width:10%">模型</th><th>资源</th><th style="width:7%">产品线</th>
+      <th style="width:7%">等级</th><th style="width:10%">成本</th>
+      <th style="width:12%">客户报价</th><th style="width:10%">参考TPM</th><th style="width:10%">利润/差</th>
+    </tr></thead><tbody>`;
+
+    this.selected.forEach((s, i) => {
+      const p = DB.products[s.idx];
+      const cost = priceNum(p.price);
+      const sell = s.sellPrice;
+      let diff, diffText;
+      if (p.unit === '折扣率') {
+        diff = (sell - cost).toFixed(2);
+        diffText = '+' + diff;
+      } else {
+        diff = (sell - cost).toFixed(2);
+        diffText = '+' + diff;
+      }
+      html += `<tr>
+        <td><b>${p.model}</b></td>
+        <td class="muted">${p.resource}</td>
+        <td>${lineBadge(p.line)}</td>
+        <td class="muted">${p.tier}</td>
+        <td><span class="price ${priceClass(p.price)}">${fmtPrice(p.price)}</span></td>
+        <td><input type="number" step="0.01" value="${sell}" onchange="Quote.updateSell(${i}, this.value)"></td>
+        <td class="muted">${p.tpm ? p.tpm.toLocaleString() + ' 万/分' : '-'}</td>
+        <td><span class="margin">${diffText}</span></td>
+      </tr>`;
+    });
+
+    html += '</tbody></table></div>';
+    $('quoteSelectedTable').innerHTML = html;
+  },
+
+  updateSell(i, val) {
+    this.selected[i].sellPrice = parseFloat(val) || 0;
+    this.renderSelected();
+  },
+
+  generate() {
+    if (!this.selected.length) { alert('请先选择产品'); return; }
+
+    const sellerName = $('qSellerName').value || '（供方名称）';
+    const sellerContact = $('qSellerContact').value || '';
+    const buyerName = $('qBuyerName').value || '（需方名称）';
+    const buyerContact = $('qBuyerContact').value || '';
+    const date = $('qDate').value || new Date().toISOString().slice(0,10);
+    const validity = $('qValidity').value || '30';
+    const notes = $('qNotes').value || '';
+    const qid = 'Q' + date.replace(/-/g, '') + String(Date.now()).slice(-4);
+
+    let items = '';
+    this.selected.forEach((s, i) => {
+      const p = DB.products[s.idx];
+      const sell = s.sellPrice;
+      let priceText, unitText;
+      if (p.unit === '折扣率') {
+        priceText = (sell * 100).toFixed(0) + '%';
+        unitText = '按官方价结算';
+      } else {
+        priceText = '$' + sell;
+        unitText = p.currency;
+      }
+      const extra = p.warranty ? '质保' + p.warranty : (p.service || '');
+      items += `<tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td><b>${p.model}</b></td>
+        <td class="muted">${p.resource}${p.tier !== '-' ? ' · ' + p.tier : ''}${p.tpm ? '<br>参考TPM：' + p.tpm.toLocaleString() + ' 万/分' : ''}</td>
+        <td>${priceText}</td>
+        <td>${unitText}</td>
+        <td class="muted">${extra}</td>
+      </tr>`;
+    });
+
+    const expiryDate = new Date(date);
+    expiryDate.setDate(expiryDate.getDate() + parseInt(validity));
+    const expiryStr = expiryDate.toISOString().slice(0, 10);
+
+    const html = `<div class="quote-doc">
+      <h2>报 价 单</h2>
+      <div class="quote-sub">QUOTATION</div>
+      <div class="quote-meta-row">
+        <span>报价编号：${qid}</span>
+        <span>报价日期：${date}</span>
+      </div>
+      <div class="quote-parties">
+        <div class="quote-party">
+          <div class="plabel">供方</div>
+          <div class="pname">${sellerName}</div>
+          <div>联系人：${sellerContact}</div>
+        </div>
+        <div class="quote-party">
+          <div class="plabel">需方</div>
+          <div class="pname">${buyerName}</div>
+          <div>联系人：${buyerContact}</div>
+        </div>
+      </div>
+      <table>
+        <thead><tr>
+          <th style="width:5%;text-align:center">#</th>
+          <th style="width:15%">产品/模型</th>
+          <th style="width:25%">规格/资源</th>
+          <th style="width:12%">价格</th>
+          <th style="width:15%">计价方式</th>
+          <th>备注</th>
+        </tr></thead>
+        <tbody>${items}</tbody>
+      </table>
+      <div class="quote-terms">
+        <h4>条款与说明</h4>
+        <p>1. 本报价有效期至 ${expiryStr}（${validity} 天内有效）。</p>
+        <p>2. 折扣率表示按官方原价的对应比例结算；USD 价格为含税价。</p>
+        ${notes ? '<p>3. ' + notes.replace(/\n/g, '<br>&nbsp;&nbsp;&nbsp; ') + '</p>' : ''}
+        <p>${notes ? '4.' : '3.'} 本报价单最终解释权归供方所有。</p>
+      </div>
+      <div class="sign-row">
+        <div class="sign-box">供方签章：<div class="sign-line"></div></div>
+        <div class="sign-box">需方签章：<div class="sign-line"></div></div>
+      </div>
+    </div>`;
+
+    $('quoteOutput').innerHTML = html;
+    $('quoteModal').classList.add('open');
+    this._lastHtml = html;
+    this._qid = qid;
+  },
+
+  closeModal() { $('quoteModal').classList.remove('open'); },
+
+  download() {
+    const css = `body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:#fff;color:#2C2C2A;margin:0;padding:40px;font-size:13px;line-height:1.7}
+.quote-doc{padding:0;font-size:13px;line-height:1.8;color:#2C2C2A}
+.quote-doc h2{font-size:22px;text-align:center;margin:0 0 4px;font-weight:600;letter-spacing:2px}
+.quote-doc .quote-sub{text-align:center;color:#5F5E5A;font-size:12px;margin-bottom:24px;letter-spacing:1px}
+.quote-doc .quote-meta-row{display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;color:#5F5E5A}
+.quote-doc .quote-parties{display:flex;justify-content:space-between;margin-bottom:20px;gap:20px}
+.quote-doc .quote-party{flex:1;font-size:12px;line-height:1.8}
+.quote-doc .quote-party .plabel{color:#888780;font-size:11px}
+.quote-doc .quote-party .pname{font-size:14px;font-weight:500;color:#2C2C2A;margin:2px 0 4px}
+.quote-doc table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px}
+.quote-doc table th{background:#F5F4EF;padding:8px 10px;border:0.5px solid rgba(0,0,0,0.09);font-weight:500;text-align:left}
+.quote-doc table td{padding:8px 10px;border:0.5px solid rgba(0,0,0,0.09)}
+.quote-doc table tbody tr:nth-child(even){background:#FBFAF7}
+.quote-doc .quote-terms{font-size:11px;color:#5F5E5A;line-height:1.8;margin-top:16px}
+.quote-doc .quote-terms h4{font-size:12px;color:#2C2C2A;margin:0 0 4px}
+.quote-doc .sign-row{display:flex;justify-content:space-between;margin-top:32px}
+.quote-doc .sign-box{font-size:12px;color:#5F5E5A}
+.quote-doc .sign-box .sign-line{border-bottom:0.5px solid rgba(0,0,0,0.16);width:180px;height:28px;margin-top:4px}
+.muted{color:#5F5E5A}`;
+    const full = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>报价单_' + this._qid + '</title><style>' + css + '</style></head><body>' + this._lastHtml + '</body></html>';
+
+    const blob = new Blob([full], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '报价单_' + this._qid + '.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+};
+
+/* ==================== INIT ==================== */
+document.addEventListener('DOMContentLoaded', () => {
+  Search.init();
+  Compare.init();
+  Quote.init();
+});
+</script>
+</body>
+</html>

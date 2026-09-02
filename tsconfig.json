@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./apps/public/tsconfig.json" },
+    { "path": "./apps/admin/tsconfig.json" },
+    { "path": "./worker/tsconfig.json" }
+  ]
+}

@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+*.cpuprofile
+*.tsbuildinfo
+apps/public/dist/
+apps/admin/dist/
+.dev.vars
+.env
+.env.*
+!.env.example
