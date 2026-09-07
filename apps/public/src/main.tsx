@@ -20,10 +20,13 @@ type Product = {
   publicMax: number;
   currency: string;
   unit: string;
-  referenceTpm: number | null;
-  serviceNote: string;
+  referenceTpm: string | null;
   hasPdf: boolean;
   pdfDownload?: boolean | number;
+  officialInputMin?: string | number | null;
+  officialOutputMin?: string | number | null;
+  cacheHitPercent?: string | null;
+  officialCacheHitPrice?: string | null;
 };
 
 type CompareGroup = {
@@ -39,56 +42,48 @@ type PublicDictionary = {
 };
 
 const API_BASE =
-  import.meta.env.VITE_PUBLIC_API_BASE ?? "http://localhost:8787";
-
-const fallbackProducts: Product[] = [
-  {
-    id: "preview-1",
-    model: "Claude",
-    brand: "Anthropic",
-    origin: "海外",
-    productLine: "直客",
-    publicName: "稳健推理方案",
-    publicDescription: "适合长文本分析、代码审查和日常生产力场景。",
-    publicMin: 0.72,
-    publicMax: 0.8,
-    currency: "CNY",
-    unit: "折扣率",
-    referenceTpm: 5000,
-    serviceNote: "稳定服务，支持技术咨询",
-    hasPdf: false,
-  },
-  {
-    id: "preview-2",
-    model: "Gemini",
-    brand: "Google",
-    origin: "海外",
-    productLine: "中转",
-    publicName: "多模态快速通道",
-    publicDescription: "面向图片理解和高并发调用的轻量接入方案。",
-    publicMin: 0.26,
-    publicMax: 0.31,
-    currency: "CNY",
-    unit: "折扣率",
-    referenceTpm: 10000,
-    serviceNote: "支持高峰期扩容",
-    hasPdf: false,
-  },
-];
+  import.meta.env.VITE_PUBLIC_API_BASE ??
+  (import.meta.env.DEV ? "http://localhost:8787" : "/backend");
 
 function formatPrice(product: Product) {
-  const value =
-    product.publicMin === product.publicMax
-      ? product.publicMin.toString()
-      : `${product.publicMin} – ${product.publicMax}`;
-  return product.unit === "折扣率"
-    ? `${value} 折`
-    : `${product.currency} ${value} / ${product.unit}`;
+  const value = String(product.publicMin);
+  return value;
+}
+
+function discountFactor(product: Product) {
+  const value = Number(product.publicMin);
+  // Accept legacy 7.5-style values while new entries use 0.75-style values.
+  return Number.isFinite(value) && value > 1 ? value / 10 : value;
+}
+
+function PriceDetail({ product }: { product: Product }) {
+  const discount = discountFactor(product);
+  const currencySymbol = product.currency === "USD" ? "$" : product.currency === "CNY" ? "¥" : `${product.currency} `;
+  const numericPrice = (value?: string | number | null) => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (!value) return null;
+    const matched = value.replaceAll(",", "").match(/-?\d+(?:\.\d+)?/);
+    if (!matched) return null;
+    const parsed = Number(matched[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const formatMoney = (value: number) => {
+    const formatted = value.toFixed(4).replace(/\.?0+$/, "");
+    return `${currencySymbol}${formatted} / 1M tokens`;
+  };
+  const row = (label: string, value?: string | number | null) => {
+    if (value == null || value === "") return null;
+    const official = numericPrice(value);
+    return <div className="price-detail-cell" key={label}><span>{label}</span><b>{official == null ? String(value) : formatMoney(official * discount)}</b><small>官方价格 {official == null ? String(value) : formatMoney(official)}</small></div>;
+  };
+  const saving = Number.isFinite(discount) ? Math.max(0, Math.round((1 - discount) * 100)) : null;
+  return <div className="official-pricing"><div className="price-detail-grid official-price-grid">{row("输入价格", product.officialInputMin)}{row("输出价格", product.officialOutputMin)}{row("缓存命中价格", product.officialCacheHitPrice)}<div className="price-detail-cell saving-cell"><span>节省幅度</span><b>{saving == null ? "—" : `省 ${saving}%`}</b><small>按 {formatPrice(product)} 计算</small></div></div>{(product.referenceTpm || product.cacheHitPercent) && <div className="service-metrics">{product.referenceTpm && <span>参考 TPM <b>{product.referenceTpm}</b></span>}{product.cacheHitPercent && <span>缓存命中 <b>{product.cacheHitPercent}</b></span>}</div>}</div>;
 }
 
 function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [view, setView] = useState<"catalog" | "compare" | "quote">("catalog");
+  const [expanded, setExpanded] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [keyword, setKeyword] = useState("");
@@ -156,12 +151,12 @@ function App() {
       })
       .catch(() => {
         setApiFailed(true);
-        setProducts(fallbackProducts);
+        setProducts([]);
       })
       .finally(() => setLoading(false));
   }, [page, meta.pageSize, debouncedKeyword, line, origin]);
 
-  const source = apiFailed && import.meta.env.DEV ? fallbackProducts : products;
+  const source = products;
   const dictionaryValues = (type: PublicDictionary["type"], fallback: string[]) => {
     const values = publicDictionaries
       .filter((item) => item.type === type)
@@ -211,13 +206,12 @@ function App() {
         }
         const grouped = new Map<string, Product[]>();
         for (const item of payload.data ?? []) {
-          const key = `${item.currency} / ${item.unit}`;
+          const key = item.currency;
           grouped.set(key, [...(grouped.get(key) ?? []), item]);
         }
         setCompareGroups(
           [...grouped.entries()].map(([key, data]) => {
-            const [currency, unit] = key.split(" / ");
-            return { currency, unit, data };
+            return { currency: key, unit: "", data };
           }),
         );
       })
@@ -264,12 +258,6 @@ function App() {
             </h1>
             <p>面向业务团队的公开方案目录。只呈现可对外使用的信息。</p>
           </div>
-          <a
-            className="admin-link"
-            href={import.meta.env.VITE_ADMIN_URL ?? "https://admin.example.com"}
-          >
-            运营入口 <span>↗</span>
-          </a>
         </div>
         <div className="search-panel">
           <label className="search-input">
@@ -371,59 +359,17 @@ function App() {
 
       {view !== "compare" && (
         <>
-        <section className="cards" aria-live="polite">
+        <section className="cards list-layout" aria-live="polite">
+          <div className="catalog-table-head"><span>模型 / 品牌</span><span>分组</span><span>说明</span><span>来源</span><span>产品线</span><span>折扣率</span><span>详情 / PDF</span></div>
           {filtered.map((product, index) => (
-            <article
-              className="product-card"
-              key={product.id}
-              style={{ "--delay": `${index * 60}ms` } as CSSProperties}
-            >
-              <div className="card-top">
-                <span className="index">0{index + 1}</span>
-                <span className="pill">{product.origin}</span>
-                <span className="pill pill-quiet">{product.productLine}</span>
-              </div>
-              <div className="model-line">
-                <h3>{product.model}</h3>
-                <span>{product.brand}</span>
-              </div>
-              <p className="public-name">{product.publicName}</p>
-              <p className="description">{product.publicDescription}</p>
-              <div className="card-footer">
-                <div>
-                  <div className="price">{formatPrice(product)}</div>
-                  <div className="price-caption">
-                    公开参考价 · {product.unit}
-                  </div>
-                </div>
-                <div className="facts">
-                  <span>
-                    {product.referenceTpm
-                      ? `${product.referenceTpm.toLocaleString()} TPM`
-                      : "按需"}
-                  </span>
-                  <span>{product.serviceNote || "标准服务"}</span>
-                  {product.hasPdf && (
-                    <a
-                      className="pdf"
-                      href={`${API_BASE}/api/public/products/${product.id}/pdf`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      资料 PDF ↗
-                    </a>
-                  )}
-                  {product.hasPdf && product.pdfDownload !== 0 && (
-                    <a
-                      className="pdf"
-                      href={`${API_BASE}/api/public/products/${product.id}/pdf`}
-                      download
-                    >
-                      下载 PDF ↓
-                    </a>
-                  )}
-                </div>
-              </div>
+            <article className="product-card" key={product.id} style={{ "--delay": `${index * 60}ms` } as CSSProperties}>
+              <div className="list-model"><span className="index">{String(index + 1).padStart(2, "0")}</span><b>{product.model}</b><small>{product.brand}</small></div>
+              <div className="list-description"><b>{product.publicName}</b></div>
+              <div className="list-description list-notes"><p>{product.publicDescription || "—"}</p></div>
+              <span className="pill">{product.origin}</span><span className="pill pill-quiet">{product.productLine}</span>
+              <div className="list-price"><strong className="price">{formatPrice(product)}</strong></div>
+              <div className="detail-actions"><button className="expand-button" aria-expanded={expanded.includes(product.id)} onClick={() => setExpanded((v) => v.includes(product.id) ? v.filter((id) => id !== product.id) : [...v, product.id])}>{expanded.includes(product.id) ? "收起⌃" : "展开⌄"}</button>{product.hasPdf && <><a className="pdf-link" href={`${API_BASE}/api/public/products/${product.id}/pdf`} target="_blank" rel="noreferrer">在线预览</a>{product.pdfDownload ? <a className="pdf-link pdf-download-link" href={`${API_BASE}/api/public/products/${product.id}/pdf`} download rel="noreferrer">下载 PDF</a> : null}</>}</div>
+              {expanded.includes(product.id) && <div className="price-detail"><PriceDetail product={product} /></div>}
               {view === "quote" && (
                 <button
                   className={`select-product ${selected.includes(product.id) ? "selected" : ""}`}
@@ -469,13 +415,13 @@ function App() {
             compareGroups.map((group) => (
               <div className="compare-group" key={`${group.currency}/${group.unit}`}>
                 <div className="compare-group-title">
-                  {group.currency} / {group.unit}
+                  {group.currency}
                 </div>
                 <div className="compare-row compare-head">
                   <span>匿名方案</span>
                   <span>模型 / 来源</span>
                   <span>产品线</span>
-                  <span>对外价格</span>
+                  <span>折扣率</span>
                 </div>
                 {group.data.map((product, index) => (
                   <div className="compare-row" key={product.id}>
@@ -493,7 +439,7 @@ function App() {
                     <span className="compare-price">
                       {formatPrice(product)}
                       <small>
-                        {product.currency} / {product.unit}
+                        {product.currency}
                       </small>
                     </span>
                   </div>
@@ -542,7 +488,7 @@ function App() {
                   <th>#</th>
                   <th>模型 / 方案</th>
                   <th>规格</th>
-                  <th>公开参考价</th>
+                  <th>折扣率</th>
                 </tr>
               </thead>
               <tbody>
@@ -558,7 +504,7 @@ function App() {
                       {product.productLine} · {product.origin}
                       <br />
                       {product.referenceTpm
-                        ? `${product.referenceTpm.toLocaleString()} TPM`
+                        ? `${product.referenceTpm} TPM`
                         : "按需"}
                     </td>
                     <td>{formatPrice(product)}</td>

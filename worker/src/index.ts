@@ -10,6 +10,7 @@ type User = {
   must_change_password: number;
 };
 type Input = Record<string, unknown>;
+const PBKDF2_ITERATIONS = 99_999;
 
 const json = (data: unknown, status = 200, headers: HeadersInit = {}) =>
   Response.json(data, {
@@ -25,6 +26,8 @@ const required = (value: unknown) =>
   typeof value === "string" && value.trim().length > 0;
 const numberOrNull = (value: unknown) =>
   value === null || value === "" || value === undefined ? null : Number(value);
+const textOrNull = (value: unknown) =>
+  value === null || value === "" || value === undefined ? null : String(value).trim();
 const requestId = (request: Request) =>
   request.headers.get("cf-ray") ?? newId();
 
@@ -51,6 +54,13 @@ async function sha256(value: string) {
     byte.toString(16).padStart(2, "0"),
   ).join("");
 }
+async function secureStringEqual(left: string, right: string) {
+  const [leftHash, rightHash] = await Promise.all([sha256(left), sha256(right)]);
+  let difference = 0;
+  for (let index = 0; index < leftHash.length; index += 1)
+    difference |= leftHash.charCodeAt(index) ^ rightHash.charCodeAt(index);
+  return difference === 0;
+}
 async function sha256Bytes(value: ArrayBuffer) {
   const digest = await crypto.subtle.digest("SHA-256", value);
   return Array.from(new Uint8Array(digest), (byte) =>
@@ -58,7 +68,8 @@ async function sha256Bytes(value: ArrayBuffer) {
   ).join("");
 }
 async function hashPassword(password: string) {
-  const iterations = 120_000;
+  // Stay below Cloudflare Workers' production PBKDF2 hard cap.
+  const iterations = PBKDF2_ITERATIONS;
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey(
     "raw",
@@ -83,8 +94,7 @@ async function verifyPassword(password: string, encoded: string) {
   const iterations = Number(iterationsText);
   if (
     !Number.isSafeInteger(iterations) ||
-    iterations < 100_000 ||
-    iterations > 300_000
+    iterations !== PBKDF2_ITERATIONS
   )
     return false;
   const key = await crypto.subtle.importKey(
@@ -156,24 +166,37 @@ async function audit(
 async function ensureInitialAdmin(env: AppEnv) {
   if (!env.DB || !env.INITIAL_ADMIN_USERNAME || !env.INITIAL_ADMIN_PASSWORD)
     return;
-  const existing = await env.DB.prepare(
-    "SELECT id FROM users WHERE role = 'super_admin' LIMIT 1",
-  ).first<{ id: string }>();
+  let existing: { id: string } | null;
+  try {
+    existing = await env.DB.prepare(
+      "SELECT id FROM users WHERE role = 'super_admin' LIMIT 1",
+    ).first<{ id: string }>();
+  } catch (error) {
+    console.error(JSON.stringify({ event: "bootstrap_db_read_failed", error: String(error) }));
+    throw new Error("bootstrap_db_read_failed");
+  }
   if (existing) return;
   if (env.INITIAL_ADMIN_PASSWORD.length < 8)
     throw new Error("INITIAL_ADMIN_PASSWORD must be at least 8 characters");
   const username = env.INITIAL_ADMIN_USERNAME.trim();
   if (!username) throw new Error("INITIAL_ADMIN_USERNAME is required");
-  await env.DB.prepare(
-    "INSERT INTO users (id, username, display_name, role, password_hash, must_change_password) VALUES (?, ?, ?, 'super_admin', ?, 1)",
-  )
-    .bind(
-      newId(),
-      username,
-      username,
-      await hashPassword(env.INITIAL_ADMIN_PASSWORD),
+  let passwordHash: string;
+  try {
+    passwordHash = await hashPassword(env.INITIAL_ADMIN_PASSWORD);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "bootstrap_password_hash_failed", error: String(error) }));
+    throw new Error("bootstrap_password_hash_failed");
+  }
+  try {
+    await env.DB.prepare(
+      "INSERT INTO users (id, username, display_name, role, password_hash, must_change_password) VALUES (?, ?, ?, 'super_admin', ?, 1)",
     )
-    .run();
+      .bind(newId(), username, username, passwordHash)
+      .run();
+  } catch (error) {
+    console.error(JSON.stringify({ event: "bootstrap_db_write_failed", error: String(error) }));
+    throw new Error("bootstrap_db_write_failed");
+  }
 }
 async function authenticate(request: Request, env: AppEnv) {
   if (!env.DB) return null;
@@ -259,7 +282,7 @@ async function publicProducts(env: AppEnv, url: URL) {
     .first<{ total: number }>();
   params.push(pageSize, (page - 1) * pageSize);
   const result = await env.DB.prepare(
-    `SELECT p.id, m.name AS model, b.name AS brand, o.name AS origin, l.name AS productLine, p.public_name AS publicName, p.public_description AS publicDescription, p.public_min AS publicMin, p.public_max AS publicMax, p.currency, p.unit, p.reference_tpm AS referenceTpm, p.service_note AS serviceNote, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE 1 END AS hasPdf, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE v.show_download_button END AS pdfDownload FROM products p JOIN dictionaries m ON p.model_id = m.id JOIN dictionaries b ON p.brand_id = b.id JOIN dictionaries o ON p.origin_id = o.id JOIN dictionaries l ON p.product_line_id = l.id LEFT JOIN product_pdf_versions v ON v.id = p.current_pdf_version_id WHERE ${where.join(" AND ")} ORDER BY p.updated_at DESC, p.id DESC LIMIT ? OFFSET ?`,
+    `SELECT p.id, m.name AS model, b.name AS brand, o.name AS origin, l.name AS productLine, p.public_name AS publicName, p.public_description AS publicDescription, p.public_min AS publicMin, p.public_max AS publicMax, p.currency, p.unit, p.reference_tpm AS referenceTpm, p.service_note AS serviceNote, p.official_input_min AS officialInputMin, p.official_input_max AS officialInputMax, p.official_output_min AS officialOutputMin, p.official_output_max AS officialOutputMax, p.cache_hit_percent AS cacheHitPercent, p.official_cache_hit_price AS officialCacheHitPrice, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE 1 END AS hasPdf, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE v.show_download_button END AS pdfDownload FROM products p JOIN dictionaries m ON p.model_id = m.id JOIN dictionaries b ON p.brand_id = b.id JOIN dictionaries o ON p.origin_id = o.id JOIN dictionaries l ON p.product_line_id = l.id LEFT JOIN product_pdf_versions v ON v.id = p.current_pdf_version_id WHERE ${where.join(" AND ")} ORDER BY p.updated_at DESC, p.id DESC LIMIT ? OFFSET ?`,
   )
     .bind(...params)
     .all();
@@ -312,7 +335,7 @@ async function publicCompare(env: AppEnv, url: URL) {
     params.push(line);
   }
   const rows = await env.DB.prepare(
-    `SELECT p.id, m.name AS model, b.name AS brand, o.name AS origin, l.name AS productLine, p.public_name AS publicName, p.public_description AS publicDescription, p.public_min AS publicMin, p.public_max AS publicMax, p.currency, p.unit, p.reference_tpm AS referenceTpm, p.service_note AS serviceNote, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE 1 END AS hasPdf, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE v.show_download_button END AS pdfDownload FROM products p JOIN dictionaries m ON p.model_id = m.id JOIN dictionaries b ON p.brand_id = b.id JOIN dictionaries o ON p.origin_id = o.id JOIN dictionaries l ON p.product_line_id = l.id LEFT JOIN product_pdf_versions v ON v.id = p.current_pdf_version_id WHERE ${where.join(" AND ")} ORDER BY p.currency ASC, p.unit ASC, p.public_min ASC, p.updated_at DESC`,
+    `SELECT p.id, m.name AS model, b.name AS brand, o.name AS origin, l.name AS productLine, p.public_name AS publicName, p.public_description AS publicDescription, p.public_min AS publicMin, p.public_max AS publicMax, p.currency, p.unit, p.reference_tpm AS referenceTpm, p.service_note AS serviceNote, p.official_input_min AS officialInputMin, p.official_input_max AS officialInputMax, p.official_output_min AS officialOutputMin, p.official_output_max AS officialOutputMax, p.cache_hit_percent AS cacheHitPercent, p.official_cache_hit_price AS officialCacheHitPrice, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE 1 END AS hasPdf, CASE WHEN v.id IS NULL OR v.public_status != 'public' THEN 0 ELSE v.show_download_button END AS pdfDownload FROM products p JOIN dictionaries m ON p.model_id = m.id JOIN dictionaries b ON p.brand_id = b.id JOIN dictionaries o ON p.origin_id = o.id JOIN dictionaries l ON p.product_line_id = l.id LEFT JOIN product_pdf_versions v ON v.id = p.current_pdf_version_id WHERE ${where.join(" AND ")} ORDER BY p.currency ASC, p.unit ASC, p.public_min ASC, p.updated_at DESC`,
   )
     .bind(...params)
     .all<Record<string, unknown> & { currency: string; unit: string }>();
@@ -321,10 +344,10 @@ async function publicCompare(env: AppEnv, url: URL) {
     publicLabel: `方案 ${String.fromCharCode(65 + index)}`,
   }));
   const groups = [...data.reduce((map, item) => {
-    const key = `${String(item.currency)}\u0000${String(item.unit)}`;
+    const key = String(item.currency);
     const group = map.get(key) ?? {
       currency: String(item.currency),
-      unit: String(item.unit),
+      unit: "",
       data: [],
     };
     group.data.push(item);
@@ -347,11 +370,30 @@ async function login(request: Request, env: AppEnv, rid: string) {
   )
     .bind(String(body.username).trim())
     .first<User & { password_hash: string; status: string }>();
+  const submittedPassword = String(body.password);
+  let passwordValid =
+    Boolean(user) && (await verifyPassword(submittedPassword, user!.password_hash));
+  let bootstrapRecovered = false;
   if (
-    !user ||
-    user.status !== "active" ||
-    !(await verifyPassword(String(body.password), user.password_hash))
+    user &&
+    !passwordValid &&
+    user.status === "active" &&
+    user.role === "super_admin" &&
+    Boolean(user.must_change_password) &&
+    env.INITIAL_ADMIN_USERNAME?.trim() === user.username &&
+    typeof env.INITIAL_ADMIN_PASSWORD === "string" &&
+    env.INITIAL_ADMIN_PASSWORD.length >= 8 &&
+    (await secureStringEqual(submittedPassword, env.INITIAL_ADMIN_PASSWORD))
   ) {
+    await env.DB.prepare(
+      "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ? AND must_change_password = 1",
+    )
+      .bind(await hashPassword(submittedPassword), user.id)
+      .run();
+    passwordValid = true;
+    bootstrapRecovered = true;
+  }
+  if (!user || user.status !== "active" || !passwordValid) {
     await audit(
       env,
       request,
@@ -367,6 +409,17 @@ async function login(request: Request, env: AppEnv, rid: string) {
     );
     return json({ error: "invalid_credentials" }, 401);
   }
+  if (bootstrapRecovered)
+    await audit(
+      env,
+      request,
+      rid,
+      user,
+      "bootstrap_password_recovered",
+      "user",
+      user.id,
+      "pending initial administrator password recovered from bootstrap secret",
+    );
   const token = `${newId()}${newId()}`;
   await env.DB.prepare(
     "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, datetime('now', '+30 days'), datetime('now'))",
@@ -825,16 +878,15 @@ function validateProduct(data: Input, requireInternal: boolean) {
     "productLineId",
     "publicName",
     "currency",
-    "unit",
   ];
   if (keys.some((key) => !required(data[key])))
     return "required_product_field_missing";
+  if (data.currency !== "USD" && data.currency !== "CNY")
+    return "unsupported_currency";
   const values = Object.fromEntries(
     [
       "publicMin",
-      "publicMax",
       "costMin",
-      "costMax",
       "internalMin",
       "internalMax",
     ].map((key) => [key, numberOrNull(data[key])]),
@@ -854,28 +906,14 @@ function validateProduct(data: Input, requireInternal: boolean) {
     )
   )
     return "invalid_price";
-  if (
-    values.publicMin === null ||
-    values.publicMax === null ||
-    values.publicMin > values.publicMax
-  )
-    return "invalid_public_price_range";
-  if (
-    values.costMin !== null &&
-    values.costMax !== null &&
-    values.costMin > values.costMax
-  )
-    return "invalid_cost_price_range";
+  if (values.publicMin === null) return "invalid_public_price_range";
   if (
     values.internalMin !== null &&
     values.internalMax !== null &&
     values.internalMin > values.internalMax
   )
     return "invalid_internal_price_range";
-  if (
-    requireInternal &&
-    (values.internalMin === null || values.internalMax === null)
-  )
+  if (requireInternal && (values.internalMin === null || values.internalMax === null))
     return "internal_price_required_to_publish";
   return null;
 }
@@ -919,7 +957,7 @@ async function productsApi(
       .first<{ total: number }>();
     params.push(pageSize, (page - 1) * pageSize);
     const rows = await env.DB.prepare(
-      `SELECT p.id, p.status, p.public_name AS publicName, p.public_description AS publicDescription, p.internal_resource AS internalResource, p.tier, p.internal_note AS internalNote, p.reference_tpm AS referenceTpm, p.service_note AS serviceNote, p.public_min AS publicMin, p.public_max AS publicMax, p.internal_min AS internalMin, p.internal_max AS internalMax, p.cost_min AS costMin, p.cost_max AS costMax, p.currency, p.unit, p.updated_at AS updatedAt, p.provider_id AS providerId, pv.name AS providerName, m.id AS modelId, m.name AS model, b.id AS brandId, b.name AS brand, o.id AS originId, o.name AS origin, l.id AS productLineId, l.name AS productLine FROM products p JOIN providers pv ON pv.id = p.provider_id JOIN dictionaries m ON m.id = p.model_id JOIN dictionaries b ON b.id = p.brand_id JOIN dictionaries o ON o.id = p.origin_id JOIN dictionaries l ON l.id = p.product_line_id ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY p.updated_at DESC, p.id DESC LIMIT ? OFFSET ?`,
+      `SELECT p.id, p.status, p.public_name AS publicName, p.public_description AS publicDescription, p.internal_resource AS internalResource, p.tier, p.internal_note AS internalNote, p.reference_tpm AS referenceTpm, p.service_note AS serviceNote, p.public_min AS publicMin, p.public_max AS publicMax, p.internal_min AS internalMin, p.internal_max AS internalMax, p.cost_min AS costMin, p.cost_max AS costMax, p.currency, p.unit, p.official_input_min AS officialInputMin, p.official_input_max AS officialInputMax, p.official_output_min AS officialOutputMin, p.official_output_max AS officialOutputMax, p.cache_hit_percent AS cacheHitPercent, p.official_cache_hit_price AS officialCacheHitPrice, p.updated_at AS updatedAt, p.provider_id AS providerId, pv.name AS providerName, m.id AS modelId, m.name AS model, b.id AS brandId, b.name AS brand, o.id AS originId, o.name AS origin, l.id AS productLineId, l.name AS productLine FROM products p JOIN providers pv ON pv.id = p.provider_id JOIN dictionaries m ON m.id = p.model_id JOIN dictionaries b ON b.id = p.brand_id JOIN dictionaries o ON o.id = p.origin_id JOIN dictionaries l ON l.id = p.product_line_id ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY p.updated_at DESC, p.id DESC LIMIT ? OFFSET ?`,
     )
       .bind(...params)
       .all();
@@ -930,14 +968,16 @@ async function productsApi(
   }
   if (!sameOrigin(request)) return json({ error: "csrf_check_failed" }, 403);
   const body = bodyRecord(await request.json().catch(() => ({})));
-  if (!productId && request.method === "POST") {
+  // Treat a collection PATCH like create for compatibility with older admin bundles
+  // that used the edit method while copying a product without an id.
+  if (!productId && (request.method === "POST" || request.method === "PATCH")) {
     if (!(await hasPermission(env, actor, "product.write")))
       return json({ error: "forbidden" }, 403);
     const error = validateProduct(body, false);
     if (error) return json({ error }, 400);
     const value = newId();
     await env.DB.prepare(
-      `INSERT INTO products (id, provider_id, model_id, brand_id, origin_id, product_line_id, internal_resource, tier, internal_note, public_name, public_description, reference_tpm, service_note, cost_min, cost_max, internal_min, internal_max, public_min, public_max, currency, unit, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (id, provider_id, model_id, brand_id, origin_id, product_line_id, internal_resource, tier, internal_note, public_name, public_description, reference_tpm, service_note, cost_min, cost_max, internal_min, internal_max, public_min, public_max, currency, unit, official_input_min, official_input_max, official_output_min, official_output_max, cache_hit_percent, official_cache_hit_price, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         value,
@@ -946,23 +986,27 @@ async function productsApi(
         body.brandId,
         body.originId,
         body.productLineId,
-        body.internalResource ?? "",
-        body.tier ?? "",
-        body.internalNote ?? "",
+        "",
+        "",
+        "",
         body.publicName,
         body.publicDescription ?? "",
-        body.referenceTpm === undefined || body.referenceTpm === ""
-          ? null
-          : Number(body.referenceTpm),
-        body.serviceNote ?? "",
+        textOrNull(body.referenceTpm),
+        "",
         numberOrNull(body.costMin),
-        numberOrNull(body.costMax),
+        numberOrNull(body.costMin),
         numberOrNull(body.internalMin),
         numberOrNull(body.internalMax),
         Number(body.publicMin),
-        Number(body.publicMax),
+        Number(body.publicMin),
         body.currency,
-        body.unit,
+        body.unit ?? "",
+        textOrNull(body.officialInputMin),
+        textOrNull(body.officialInputMin),
+        textOrNull(body.officialOutputMin),
+        textOrNull(body.officialOutputMin),
+        textOrNull(body.cacheHitPercent),
+        textOrNull(body.officialCacheHitPrice),
         actor.id,
       )
       .run();
@@ -998,7 +1042,7 @@ async function productsApi(
           currency: before.currency,
           unit: before.unit,
           publicMin: before.public_min,
-          publicMax: before.public_max,
+          publicMax: before.public_min,
           internalMin: before.internal_min,
           internalMax: before.internal_max,
         },
@@ -1057,6 +1101,12 @@ async function productsApi(
     publicMax: before.public_max,
     internalMin: before.internal_min,
     internalMax: before.internal_max,
+    officialInputMin: before.official_input_min,
+    officialInputMax: before.official_input_max,
+    officialOutputMin: before.official_output_min,
+    officialOutputMax: before.official_output_max,
+    cacheHitPercent: before.cache_hit_percent,
+    officialCacheHitPrice: before.official_cache_hit_price,
     costMin: before.cost_min,
     costMax: before.cost_max,
     ...body,
@@ -1064,7 +1114,7 @@ async function productsApi(
   const error = validateProduct(merged, before.status === "published");
   if (error) return json({ error }, 400);
   await env.DB.prepare(
-    `UPDATE products SET provider_id = ?, model_id = ?, brand_id = ?, origin_id = ?, product_line_id = ?, internal_resource = ?, tier = ?, internal_note = ?, public_name = ?, public_description = ?, reference_tpm = ?, service_note = ?, cost_min = ?, cost_max = ?, internal_min = ?, internal_max = ?, public_min = ?, public_max = ?, currency = ?, unit = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?`,
+    `UPDATE products SET provider_id = ?, model_id = ?, brand_id = ?, origin_id = ?, product_line_id = ?, internal_resource = ?, tier = ?, internal_note = ?, public_name = ?, public_description = ?, reference_tpm = ?, service_note = ?, cost_min = ?, cost_max = ?, internal_min = ?, internal_max = ?, public_min = ?, public_max = ?, currency = ?, unit = ?, official_input_min = ?, official_input_max = ?, official_output_min = ?, official_output_max = ?, cache_hit_percent = ?, official_cache_hit_price = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?`,
   )
     .bind(
       merged.providerId,
@@ -1072,23 +1122,27 @@ async function productsApi(
       merged.brandId,
       merged.originId,
       merged.productLineId,
-      merged.internalResource ?? before.internal_resource ?? "",
-      merged.tier ?? before.tier ?? "",
-      merged.internalNote ?? before.internal_note ?? "",
+      "",
+      "",
+      "",
       merged.publicName,
       merged.publicDescription ?? "",
-      merged.referenceTpm === undefined || merged.referenceTpm === ""
-        ? null
-        : numberOrNull(merged.referenceTpm),
-      merged.serviceNote ?? before.service_note ?? "",
+      textOrNull(merged.referenceTpm),
+      "",
       numberOrNull(merged.costMin),
-      numberOrNull(merged.costMax),
+      numberOrNull(merged.costMin),
       numberOrNull(merged.internalMin),
       numberOrNull(merged.internalMax),
       Number(merged.publicMin),
-      Number(merged.publicMax),
+      Number(merged.publicMin),
       merged.currency,
-      merged.unit,
+      merged.unit ?? before.unit ?? "",
+      textOrNull(merged.officialInputMin),
+      textOrNull(merged.officialInputMin),
+      textOrNull(merged.officialOutputMin),
+      textOrNull(merged.officialOutputMin),
+      textOrNull(merged.cacheHitPercent),
+      textOrNull(merged.officialCacheHitPrice),
       actor.id,
       productId,
     )
@@ -1505,9 +1559,9 @@ export default {
     const url = new URL(request.url);
     const rid = requestId(request);
     try {
-      await ensureInitialAdmin(env);
       if (request.method === "GET" && url.pathname === "/health")
         return json({ ok: true, requestId: rid });
+      await ensureInitialAdmin(env);
       if (
         request.method === "OPTIONS" &&
         url.pathname.startsWith("/api/public/")
@@ -1689,6 +1743,11 @@ export default {
           error: String(error),
         }),
       );
+      if (
+        error instanceof Error &&
+        /^bootstrap_(db_read|password_hash|db_write)_failed$/.test(error.message)
+      )
+        return json({ error: error.message, requestId: rid }, 500);
       return json({ error: "internal_error", requestId: rid }, 500);
     }
   },

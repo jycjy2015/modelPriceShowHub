@@ -42,8 +42,11 @@ type Product = {
   internalResource?: string;
   tier?: string;
   internalNote?: string;
-  referenceTpm?: number | null;
-  serviceNote?: string;
+  referenceTpm?: string | null;
+  officialInputMin?: string | number | null;
+  officialOutputMin?: string | number | null;
+  cacheHitPercent?: string | null;
+  officialCacheHitPrice?: string | null;
   updatedAt: string;
 };
 type UserRow = {
@@ -111,13 +114,16 @@ function formatInternalPrice(
   min: number | null | undefined,
   max: number | null | undefined,
   currency: string,
-  unit: string,
+  _unit?: string,
 ) {
   if (min == null && max == null) return "—";
   const low = min ?? max;
   const high = max ?? min;
   const range = low === high ? String(low) : `${low} – ${high}`;
-  return `${currency} ${range} / ${unit}`;
+  return `${range} 折`;
+}
+function formatSinglePrice(value: number | null | undefined, currency: string) {
+  return value == null ? "—" : `${value} 折`;
 }
 
 function OperatorQuote({ products }: { products: Product[] }) {
@@ -225,7 +231,7 @@ function OperatorQuote({ products }: { products: Product[] }) {
                     </small>
                   </span>
                   <strong>
-                    {item.publicMin} – {item.publicMax}
+                    {item.publicMin} 折
                   </strong>
                 </label>
               ))}
@@ -291,8 +297,8 @@ function OperatorQuote({ products }: { products: Product[] }) {
                 <tr>
                   <th>模型 / 方案</th>
                   <th>服务商</th>
-                  <th>本次最低价</th>
-                  <th>本次最高价</th>
+                  <th>本次最低折扣率</th>
+                  <th>本次最高折扣率</th>
                 </tr>
               </thead>
               <tbody>
@@ -458,16 +464,19 @@ function PermissionEditor({ user, onDone, onCancel }: { user: UserRow; onDone: (
 }
 
 const requestJson = async <T,>(url: string, options?: RequestInit) => {
-  const response = await fetch(url, { credentials: "same-origin", ...options });
-  if (!response.ok)
-    throw new Error(
-      ((await response.json().catch(() => ({}))) as { error?: string }).error ??
-        "request_failed",
-    );
-  return response.json() as Promise<T>;
+  const response = await fetch(url, { credentials: "same-origin", cache: "no-store", ...options });
+  const contentType = response.headers.get("content-type") ?? "";
+  const raw = await response.text();
+  if (!contentType.includes("application/json"))
+    throw new Error(`api_not_reached:${response.status}:${raw.slice(0, 120)}`);
+  const payload = JSON.parse(raw) as T & { error?: string };
+  if (!response.ok) throw new Error(payload.error ?? "request_failed");
+  return payload;
 };
-const errorText = (value: unknown) =>
-  ({
+const errorText = (value: unknown) => {
+  if (String(value).startsWith("api_not_reached:"))
+    return "请求未到达 Worker，请检查登录状态或部署路由";
+  return ({
     required_product_field_missing: "请填写所有必填字段",
     invalid_public_price_range: "对外价格区间无效",
     internal_price_required_to_publish: "发布前必须填写内部参考价",
@@ -476,7 +485,14 @@ const errorText = (value: unknown) =>
     last_super_admin_protected: "不能停用或降级最后一个超管",
     password_too_short: "密码至少 8 位",
     public_confirmation_required: "请确认 PDF 适合公开展示",
+    api_not_reached: "登录接口未到达 Worker，请检查部署路由配置",
+    database_unavailable: "数据库暂不可用，请检查 D1 绑定",
+    internal_error: "服务端初始化失败，请检查 Worker 日志",
+    bootstrap_db_read_failed: "初始账号创建失败：无法读取 D1",
+    bootstrap_password_hash_failed: "初始账号创建失败：密码哈希不受当前 Worker 运行环境支持",
+    bootstrap_db_write_failed: "初始账号创建失败：无法写入 D1",
   })[String(value)] ?? String(value);
+};
 
 function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
   const [error, setError] = useState("");
@@ -510,8 +526,9 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
               },
             );
             onLogin(payload.data.user);
-          } catch {
-            setError("账号或密码不正确，请重试");
+          } catch (cause) {
+            const code = cause instanceof Error ? cause.message : "request_failed";
+            setError(code === "invalid_credentials" ? "账号或密码不正确，请重试" : errorText(code));
           }
         }}
       >
@@ -612,21 +629,39 @@ function PasswordChange({ onComplete }: { onComplete: () => void }) {
   );
 }
 
+function SearchableSelect({
+  name, label, value, options, onChange, onCreate,
+}: { name: string; label: string; value: string; options: { id: string; name: string; status?: string }[]; onChange: (id: string) => void; onCreate: (name: string) => Promise<string | undefined> }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState(value);
+  const selected = options.find((item) => item.id === selectedId);
+  const matches = options.filter((item) => item.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const create = async () => { const nameValue = query.trim(); if (!nameValue) return; const id = await onCreate(nameValue); if (id) { setSelectedId(id); onChange(id); setQuery(""); setOpen(false); } };
+  return <label className="form-field searchable-field">{label}<input type="hidden" name={name} value={selectedId} /><div className="search-select"><button type="button" className="search-select-trigger" onClick={() => setOpen(!open)}>{selected?.name ?? "请选择"}<span>⌄</span></button>{open && <div className="search-select-menu"><input autoFocus placeholder="搜索或输入新分组" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void create(); }} />{matches.map((item) => <button type="button" key={item.id} disabled={item.status === "disabled"} onClick={() => { setSelectedId(item.id); onChange(item.id); setOpen(false); setQuery(""); }}>{item.name}{item.status === "disabled" ? "（已停用）" : ""}</button>)}{query.trim() && !matches.some((item) => item.name.toLowerCase() === query.trim().toLowerCase()) && <button type="button" className="create-option" onClick={() => void create()}>创建 “{query.trim()}”</button>}</div>}</div></label>;
+}
+
 function ProductForm({
   initial,
   providers,
   dictionaries,
   onDone,
   onCancel,
+  copy = false,
 }: {
   initial?: Product;
   providers: Provider[];
   dictionaries: Dictionary[];
   onDone: () => void;
   onCancel: () => void;
+  copy?: boolean;
 }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [providerOptions, setProviderOptions] = useState<Provider[]>(providers);
+  const [dictionaryOptions, setDictionaryOptions] = useState<Dictionary[]>(dictionaries);
+  const createProvider = async (name: string) => { const alias = window.prompt("服务商别名（可选）", "") ?? ""; try { const r = await requestJson<{ data: { id: string } }>("/api/admin/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, alias }) }); const item: Provider = { id: r.data.id, name, alias, status: "active" }; setProviderOptions((v: Provider[]) => [...v, item]); return item.id; } catch { setError("服务商创建失败"); return undefined; } };
+  const createDictionary = async (type: Dictionary["type"], name: string) => { try { const r = await requestJson<{ data: { id: string } }>("/api/admin/dictionaries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, name }) }); const item: Dictionary = { id: r.data.id, type, name, status: "active" }; setDictionaryOptions((v: Dictionary[]) => [...v, item]); return item.id; } catch { setError("字典项创建失败"); return undefined; } };
   const dict = (type: Dictionary["type"]) =>
     dictionaries.filter(
       (item) => item.type === type && item.status === "active",
@@ -645,25 +680,24 @@ function ProductForm({
       productLineId: value("productLineId"),
       publicName: value("publicName"),
       publicDescription: value("publicDescription"),
-      internalResource: value("internalResource"),
-      tier: value("tier"),
-      internalNote: value("internalNote"),
-      serviceNote: value("serviceNote"),
       referenceTpm: value("referenceTpm"),
-      costMin: value("costMin"),
-      costMax: value("costMax"),
+      costMin: value("costPrice"),
       internalMin: value("internalMin"),
       internalMax: value("internalMax"),
-      publicMin: value("publicMin"),
-      publicMax: value("publicMax"),
+      publicMin: value("publicPrice"),
+      publicMax: value("publicPrice"),
       currency: value("currency"),
-      unit: value("unit"),
+      unit: initial?.unit ?? "",
+      officialInputMin: value("officialInputPrice"), officialInputMax: value("officialInputPrice"),
+      officialOutputMin: value("officialOutputPrice"), officialOutputMax: value("officialOutputPrice"),
+      cacheHitPercent: value("cacheHitPercent"),
+      officialCacheHitPrice: value("officialCacheHitPrice"),
     };
     try {
       await requestJson(
-        initial ? `/api/admin/products/${initial.id}` : "/api/admin/products",
+        initial && !copy ? `/api/admin/products/${initial.id}` : "/api/admin/products",
         {
-          method: initial ? "PATCH" : "POST",
+          method: initial && !copy ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         },
@@ -681,6 +715,7 @@ function ProductForm({
     type = "text",
     required = false,
     step?: string,
+    valueOverride?: string,
   ) => (
     <label className="form-field">
       {label}
@@ -689,12 +724,22 @@ function ProductForm({
         type={type}
         step={step}
         required={required}
-        defaultValue={
-          ((initial as Record<string, unknown> | undefined)?.[name] as
+        defaultValue={valueOverride ?? (
+          ((initial as Record<string, unknown> | undefined)?.[
+            name === "costPrice"
+              ? "costMin"
+              : name === "publicPrice"
+                ? "publicMin"
+                : name === "officialInputPrice"
+                  ? "officialInputMin"
+                  : name === "officialOutputPrice"
+                    ? "officialOutputMin"
+                    : name
+          ] as
             | string
             | number
             | undefined) ?? ""
-        }
+        )}
       />
     </label>
   );
@@ -704,125 +749,48 @@ function ProductForm({
         <div className="modal-head">
           <div>
             <span className="section-kicker">CATALOG EDITOR</span>
-            <h2>{initial ? "编辑产品" : "新增产品"}</h2>
+          <h2>{copy ? "复制产品" : initial ? "编辑产品" : "新增产品"}</h2>
           </div>
           <button type="button" className="icon-button" onClick={onCancel}>
             ×
           </button>
         </div>
         <div className="form-grid">
-          <label className="form-field">
-            服务商
-            <select
-              name="providerId"
-              required
-              defaultValue={initial?.providerId ?? ""}
-            >
-              <option value="">请选择</option>
-              {providers
-                .filter((p) => p.status === "active")
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label className="form-field">
-            模型
-            <select
-              name="modelId"
-              required
-              defaultValue={initial?.modelId ?? ""}
-            >
-              <option value="">请选择</option>
-              {dict("model").map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-field">
-            品牌
-            <select
-              name="brandId"
-              required
-              defaultValue={initial?.brandId ?? ""}
-            >
-              <option value="">请选择</option>
-              {dict("brand").map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-field">
-            来源
-            <select
-              name="originId"
-              required
-              defaultValue={initial?.originId ?? ""}
-            >
-              <option value="">请选择</option>
-              {dict("origin").map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-field">
-            产品线
-            <select
-              name="productLineId"
-              required
-              defaultValue={initial?.productLineId ?? ""}
-            >
-              <option value="">请选择</option>
-              {dict("product_line").map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {field("publicName", "对外方案名称", "text", true)}
+          <SearchableSelect name="providerId" label="服务商" value={initial?.providerId ?? ""} options={providerOptions} onChange={() => {}} onCreate={createProvider} />
+          <SearchableSelect name="modelId" label="模型" value={initial?.modelId ?? ""} options={dictionaryOptions.filter((d) => d.type === "model")} onChange={() => {}} onCreate={(n) => createDictionary("model", n)} />
+          <SearchableSelect name="brandId" label="品牌" value={initial?.brandId ?? ""} options={dictionaryOptions.filter((d) => d.type === "brand")} onChange={() => {}} onCreate={(n) => createDictionary("brand", n)} />
+          <SearchableSelect name="originId" label="来源" value={initial?.originId ?? ""} options={dictionaryOptions.filter((d) => d.type === "origin")} onChange={() => {}} onCreate={(n) => createDictionary("origin", n)} />
+          <SearchableSelect name="productLineId" label="产品线" value={initial?.productLineId ?? ""} options={dictionaryOptions.filter((d) => d.type === "product_line")} onChange={() => {}} onCreate={(n) => createDictionary("product_line", n)} />
+          {field("publicName", "对外方案名称", "text", true, undefined, copy ? `${initial?.publicName ?? ""} - 副本` : undefined)}
           {field("publicDescription", "公开说明")}
-          {field("internalResource", "内部资源标识")}
-          {field("tier", "档位")}
-          {field("serviceNote", "服务备注")}
-          {field("referenceTpm", "参考 TPM", "number", false, "1")}
+          {field("referenceTpm", "参考 TPM（可填 500-1000w）")}
+          {field("cacheHitPercent", "缓存命中比例（如大于60%）")}
         </div>
         <div className="price-grid">
           <div>
-            <h3>供应商成本价</h3>
+            <h3>供应商成本折扣率</h3>
             <div className="inline-fields">
-              {field("costMin", "最低", "number", false, "0.0001")}
-              {field("costMax", "最高", "number", false, "0.0001")}
+              {field("costPrice", "折扣率", "number", false, "0.0001")}
             </div>
           </div>
           <div>
-            <h3>内部参考价</h3>
+            <h3>内部参考折扣率</h3>
             <div className="inline-fields">
               {field("internalMin", "最低", "number", false, "0.0001")}
               {field("internalMax", "最高", "number", false, "0.0001")}
             </div>
           </div>
           <div>
-            <h3>对外展示价</h3>
+            <h3>对外展示折扣率</h3>
             <div className="inline-fields">
-              {field("publicMin", "最低", "number", true, "0.0001")}
-              {field("publicMax", "最高", "number", true, "0.0001")}
+              {field("publicPrice", "折扣率", "number", true, "0.0001")}
             </div>
           </div>
         </div>
         <div className="form-grid compact">
-          {field("currency", "币种（如 CNY）", "text", true)}
-          {field("unit", "计价单位", "text", true)}
-          {field("internalNote", "内部备注")}
+          <label className="form-field">币种<select name="currency" required defaultValue={initial?.currency ?? "USD"}><option value="USD">$ 美元（USD）</option><option value="CNY">¥ 人民币（CNY）</option></select></label>
         </div>
+        <div className="price-grid public-breakdown"><div><h3>官网输入价</h3>{field("officialInputPrice", "每 1M tokens", "number", false, "0.0001")}</div><div><h3>官网输出价</h3>{field("officialOutputPrice", "每 1M tokens", "number", false, "0.0001")}</div><div><h3>官方缓存命中价格</h3>{field("officialCacheHitPrice", "每 1M tokens", "number", false, "0.0001")}</div></div>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={onCancel}>
@@ -1014,7 +982,7 @@ function Admin({
   const [logMeta, setLogMeta] = useState({ pageSize: 50, total: 0 });
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingDictionaryId, setEditingDictionaryId] = useState<string | null>(null);
-  const [modal, setModal] = useState<"product" | "pdf" | "user" | null>(null);
+  const [modal, setModal] = useState<"product" | "product-copy" | "pdf" | "user" | null>(null);
   const [quoteProfileUser, setQuoteProfileUser] = useState<UserRow | null>(null);
   const [editing, setEditing] = useState<Product | undefined>();
   const [pdfProduct, setPdfProduct] = useState<Product | undefined>();
@@ -1469,6 +1437,7 @@ function Admin({
                         >
                           PDF
                         </button>
+                        <button onClick={() => { setEditing(product); setModal("product-copy"); }}>复制</button>
                         {product.status !== "published" && (
                           <button
                             onClick={() => void action(product, "publish")}
@@ -1608,12 +1577,7 @@ function Admin({
                           : item.status}
                     </span>
                     <span>
-                      {formatInternalPrice(
-                        item.costMin,
-                        item.costMax,
-                        item.currency,
-                        item.unit,
-                      )}
+                      {formatSinglePrice(item.costMin, item.currency)}
                     </span>
                     <span>
                       {formatInternalPrice(
@@ -1624,12 +1588,7 @@ function Admin({
                       )}
                     </span>
                     <span>
-                      {formatInternalPrice(
-                        item.publicMin,
-                        item.publicMax,
-                        item.currency,
-                        item.unit,
-                      )}
+                      {formatSinglePrice(item.publicMin, item.currency)}
                     </span>
                   </div>
                 ))}
@@ -2009,9 +1968,10 @@ function Admin({
           </div>
         )}
       </section>
-      {modal === "product" && (
+      {(modal === "product" || modal === "product-copy") && (
         <ProductForm
           initial={editing}
+          copy={modal === "product-copy"}
           providers={providers}
           dictionaries={dictionaries}
           onDone={() => {

@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS products (
   internal_note TEXT NOT NULL DEFAULT '',
   public_name TEXT NOT NULL,
   public_description TEXT NOT NULL DEFAULT '',
-  reference_tpm INTEGER,
+  reference_tpm TEXT,
   service_note TEXT NOT NULL DEFAULT '',
   cost_min REAL,
   cost_max REAL,

@@ -12,7 +12,13 @@
     "types": "wrangler types",
     "check": "tsc -b --pretty false",
     "test": "npm run check && node scripts/smoke-test.mjs && npm run test:integration",
-    "test:integration": "node scripts/integration-test.mjs"
+    "test:integration": "node scripts/integration-test.mjs",
+    "reset:admin": "node scripts/reset-admin-password.mjs",
+    "deploy:db": "node scripts/deploy-db.mjs",
+    "deploy:db:local": "node scripts/deploy-db.mjs --local",
+    "deploy:admin": "node scripts/deploy-admin.mjs",
+    "deploy:public": "node scripts/deploy-public.mjs",
+    "deploy:all": "node scripts/deploy-all.mjs"
   },
   "keywords": [],
   "author": "",

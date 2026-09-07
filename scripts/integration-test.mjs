@@ -26,10 +26,20 @@ runWrangler([
   "d1",
   "migrations",
   "apply",
-  "model-price-db",
+  "DB",
   "--local",
   "--persist-to",
   persistDir,
+]);
+runWrangler([
+  "d1",
+  "execute",
+  "DB",
+  "--local",
+  "--persist-to",
+  persistDir,
+  "--command",
+  "INSERT INTO users (id, username, display_name, role, password_hash, must_change_password) VALUES ('bootstrap-admin', 'localadmin', 'localadmin', 'super_admin', 'invalid-bootstrap-hash', 1)",
 ]);
 
 const child = spawn(
@@ -283,6 +293,29 @@ try {
     },
   });
   const productId = id(draft);
+  // The admin copy flow submits a collection PATCH in older bundles; keep this
+  // path covered so placeholder/binding regressions fail locally before deploy.
+  const copiedDraft = await expectStatus("/api/admin/products", 201, {
+    method: "PATCH",
+    cookie: operator.cookie,
+    body: {
+      providerId: provider,
+      modelId: models,
+      brandId: brand,
+      originId: origin,
+      productLineId: line,
+      publicName: "集成测试产品 - 副本",
+      publicDescription: "公开描述",
+      referenceTpm: "500-1000w",
+      publicMin: 0.78,
+      currency: "USD",
+      officialInputMin: "1.00",
+      officialOutputMin: "2.00",
+      cacheHitPercent: "大于60%",
+      officialCacheHitPrice: "0.50",
+    },
+  });
+  assert.notEqual(id(copiedDraft), productId);
   const options = await expectStatus("/api/admin/products/options?status=all", 200, { cookie: operator.cookie });
   assert.ok(options.data.data.some((item) => item.id === productId));
   await expectStatus(`/api/admin/products/${productId}/publish`, 400, {
@@ -319,8 +352,10 @@ try {
     200,
     { cookie: operator.cookie },
   );
-  assert.equal(internalCompare.data.data[0].costMin, 0.5);
-  assert.equal(internalCompare.data.data[0].internalMin, 0.75);
+  const internalRow = internalCompare.data.data.find((item) => item.id === productId);
+  assert.ok(internalRow, "original product missing from internal compare");
+  assert.equal(internalRow.costMin, 0.5);
+  assert.equal(internalRow.internalMin, 0.75);
 
   const form = new FormData();
   form.set("publicSafeConfirmed", "true");

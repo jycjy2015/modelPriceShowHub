@@ -16,5 +16,6 @@
 - 数据库迁移 `0002_permissions.sql` 已预留按用户覆盖的细粒度权限键；第一期仍按角色统一授权。
 - 本地验证：`npm test` 会执行 TypeScript 检查、契约冒烟测试和隔离本地 D1/R2 的 HTTP 集成测试；设置 `TEST_BASE_URL` 后契约脚本还会追加指定 Worker 的健康检查和公开分页接口检查。
 - 细粒度权限：已提供仅超管可调用的 `/api/admin/users/:id/permissions` 覆盖 API，第一期不提供可视化权限矩阵。
-- 当前仍需上线前人工确认：真实 D1/R2 ID、域名绑定、初始化 Secret、PDF 内容合规和生产验收；暂不导入参考 HTML 演示数据。
+- 当前仍需上线前人工确认：唯一远程 D1/R2 ID、域名绑定、初始化 Secret、PDF 内容合规和线上验收；暂不导入参考 HTML 演示数据。
+- 远程部署不区分 staging/production，仅维护一套 Worker、D1 和 R2；本地测试使用 Wrangler 模拟存储。
 - 部署目标：主域名使用 Pages 公开站点，管理子域名使用 Worker 同源托管后台和 API。

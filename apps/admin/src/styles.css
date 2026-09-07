@@ -629,6 +629,7 @@ nav a {
   opacity: 0.55;
   cursor: wait;
 }
+.search-select { position:relative; }.search-select-trigger { width:100%; min-height:40px; display:flex; justify-content:space-between; align-items:center; border:1px solid #d6d9ce; border-radius:8px; background:#fff; padding:9px 10px; color:#252721; font:12px Manrope; cursor:pointer; }.search-select-menu { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 4px); max-height:230px; overflow:auto; padding:7px; background:#fff; border:1px solid #d6d9ce; border-radius:9px; box-shadow:0 12px 30px rgba(0,0,0,.14); }.search-select-menu input { width:100%; min-height:34px; border:1px solid #d6d9ce; border-radius:7px; padding:7px 9px; font:12px Manrope; }.search-select-menu button { width:100%; display:block; border:0; background:#fff; text-align:left; padding:8px 9px; border-radius:6px; font:12px Manrope; cursor:pointer; }.search-select-menu button:hover { background:#eef2df; }.search-select-menu button:disabled { color:#a2a69c; cursor:not-allowed; }.search-select-menu .create-option { color:#557229; border-top:1px solid #e5e7df; margin-top:4px; padding-top:10px; }
 @media (max-width: 900px) {
   .form-grid,
   .price-grid {

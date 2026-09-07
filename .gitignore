@@ -1,5 +1,6 @@
 node_modules/
 .wrangler/
+.playwright-cli/
 *.cpuprofile
 *.tsbuildinfo
 apps/public/dist/

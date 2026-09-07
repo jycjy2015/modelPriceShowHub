@@ -22,8 +22,17 @@ assert.match(worker, /user_permission_updated/);
 assert.match(worker, /LIMIT \? OFFSET \?/);
 assert.match(worker, /productOptionsApi/);
 assert.match(worker, /r2AuditApi/);
+assert.match(worker, /bootstrap_password_recovered/);
+assert.match(
+  worker,
+  /const PBKDF2_ITERATIONS = 99_999;/,
+  "PBKDF2 iterations must stay below Cloudflare Workers' 100,000-iteration cap",
+);
 assert.match(publicApp, /选择模型/);
 assert.match(publicApp, /compareGroups/);
+assert.match(publicApp, />在线预览</);
+assert.match(publicApp, /<th>折扣率<\/th>/);
+assert.doesNotMatch(publicApp, /公开参考折扣率/);
 assert.match(adminApp, /清理旧日志/);
 assert.match(adminApp, /editingProviderId/);
 assert.match(adminApp, /editingDictionaryId/);
