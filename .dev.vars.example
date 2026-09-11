@@ -1,0 +1,3 @@
+# Local-only Worker variables. Copy this file to .dev.vars before running npm run dev:local.
+INITIAL_ADMIN_USERNAME=localadmin
+INITIAL_ADMIN_PASSWORD=localpass123

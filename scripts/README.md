@@ -1,6 +1,24 @@
 # 一键部署脚本
 
-所有脚本从仓库根目录执行，要求已经安装依赖并完成 `npx wrangler login`。远程 D1 名称和 Pages/Worker 名称读取当前仓库配置，不需要重复填写。
+所有部署脚本从仓库根目录执行，要求已经安装依赖并完成 `npx wrangler login`。远程 D1 名称和 Pages/Worker 名称读取当前仓库配置，不需要重复填写。
+
+## 本地启动（无需 Cloudflare 账号）
+
+```bash
+npm install
+cp .dev.vars.example .dev.vars
+npm run dev:local
+```
+
+Windows PowerShell：
+
+```powershell
+npm install
+Copy-Item .dev.vars.example .dev.vars
+npm run dev:local
+```
+
+该命令会自动应用本地 D1 迁移、构建 Admin，并启动 `http://localhost:8787`。本地数据保存在 Wrangler 模拟存储中，不会读取或修改远程 Cloudflare 数据。公开端可另开终端运行 `npm run dev:public`。
 
 ## 常用命令
 

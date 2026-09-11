@@ -8,6 +8,32 @@
 - [技术架构与数据模型](./architecture.md)：部署拓扑、数据表、状态流转、接口边界和安全设计。
 - [Cloudflare 部署手册](./cloudflare-deployment.md)：Pages、Workers、D1、R2、自定义域名和初始化流程。
 
+## 无 Cloudflare 账号的本地启动
+
+共享项目的人不需要 Cloudflare 账号即可在本地运行完整的 Worker、D1 和 R2 模拟环境。准备 Node.js LTS 后，在项目根目录执行：
+
+```bash
+npm install
+```
+
+首次运行时复制本地变量模板（不要提交 `.dev.vars`）：
+
+```bash
+cp .dev.vars.example .dev.vars
+npm run dev:local
+```
+
+Windows PowerShell 可以使用：
+
+```powershell
+Copy-Item .dev.vars.example .dev.vars
+npm run dev:local
+```
+
+`dev:local` 会自动应用本地 D1 迁移、构建管理后台并启动 Wrangler 本地 Worker。浏览器访问 `http://localhost:8787`，使用 `.dev.vars` 中的管理员账号登录；首次登录后系统会要求修改密码。公开站点需要另开终端执行 `npm run dev:public`，然后访问 Vite 显示的地址（通常为 `http://localhost:5173`），它会在开发环境请求本地 Worker。
+
+本地启动不会连接远程 Cloudflare 资源，也不需要执行 `wrangler login`。远程部署命令（如 `npm run deploy:all`）仍然需要 Cloudflare 账号。
+
 ## 当前状态
 
 - 参考页面：`temp/服务商管理台.html`

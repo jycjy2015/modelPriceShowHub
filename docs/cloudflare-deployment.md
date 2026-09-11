@@ -98,9 +98,18 @@ npx wrangler deploy --dry-run
 本地开发：
 
 ```bash
-npx wrangler d1 migrations apply DB --local
-npx wrangler dev --local
+cp .dev.vars.example .dev.vars
+npm run dev:local
 ```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .dev.vars.example .dev.vars
+npm run dev:local
+```
+
+`dev:local` 会自动应用本地 D1 迁移、构建管理端并启动 Worker（默认地址 `http://localhost:8787`）。这个流程使用 Wrangler 的本地 D1/R2 模拟，不需要 Cloudflare 账号或 `wrangler login`。公开站点可另开终端执行 `npm run dev:public`。
 
 只运行本地集成测试：
 
